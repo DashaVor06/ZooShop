@@ -40,19 +40,28 @@
             "backgroundColor": "#000000"
           }
         }
-      ],  
+      ],
       [
         "expo-localization",
         {
           "supportedLocales": {
-            "android": ["ru", "en"]
+            "android": [
+              "ru",
+              "en"
+            ]
           }
-        } 
-      ]   
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7b81c25c-4a8a-4e99-8a3d-dd036f759a3a"
+      }
     }
   }
 }
