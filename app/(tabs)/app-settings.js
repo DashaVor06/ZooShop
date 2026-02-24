@@ -1,8 +1,9 @@
 import { useLanguageSelector } from '@/src/hooks/localizationHooks/useLanguageSelector';
 import { useThemeSelector } from '@/src/hooks/themeHooks/useThemeSelector';
-import { Picker } from '@react-native-picker/picker';
 import { DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from "react-native";
+import DropDownPicker from 'react-native-dropdown-picker';
 
 export default function SettingsScreen() {
   const { selectedLanguage, languageOptions, handleLanguageChange, tLang } = useLanguageSelector();
@@ -16,12 +17,7 @@ export default function SettingsScreen() {
         onItemChange={handleLanguageChange}
         label={tLang('language')}
         options={languageOptions}
-        wrapperStyle={{ 
-          backgroundColor: themeObject.colors.card,
-          borderColor: themeObject.colors.border 
-        }}
-        pickerStyle={{ color: themeObject.colors.text }}
-        labelStyle={{ color: themeObject.colors.text }}
+        themeObject = {themeObject}
       />
 
       <BasePicker
@@ -29,12 +25,7 @@ export default function SettingsScreen() {
         onItemChange={handleThemeChange}
         label={tTheme('theme')}
         options={themeOptions}
-        wrapperStyle={{ 
-          backgroundColor: themeObject.colors.card,
-          borderColor: themeObject.colors.border 
-        }}
-        pickerStyle={{ color: themeObject.colors.text }}
-        labelStyle={{ color: themeObject.colors.text }}
+        themeObject = {themeObject}
       />
     </View>
   );
@@ -45,33 +36,62 @@ function BasePicker({
   onItemChange, 
   label,
   options = [],
-  pickerStyle = {},
-  wrapperStyle = {},
-  labelStyle = {},
-  marginBottom = 16
-}) {  
+  themeObject,
+  marginBottom = 16,
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(selectedItem);
+  const [items, setItems] = useState(options);
+
   return (
-    <View style={[styles.card, wrapperStyle, { marginBottom }]}>
-      <Text style={[styles.label, labelStyle]}>{label}</Text>
+    <View style={[styles.card, { 
+      backgroundColor: themeObject.colors.card,
+      marginBottom,
+      zIndex: open ? 9999 : 1,
+      elevation: open ? 9999 : 1,
+    }]}>
+      <Text style={[styles.label, { color: themeObject.colors.text }]}>
+        {label}
+      </Text>
       
-      <View style={[styles.pickerWrapper, wrapperStyle]}>
-        <Picker
-          selectedValue={selectedItem}
-          onValueChange={onItemChange}
-          style={[styles.picker, pickerStyle]}
-          dropdownIconColor={pickerStyle.color || "#666666"}
-          mode="dropdown"
-        >
-          {options.map((opt) => (
-            <Picker.Item 
-              key={opt.value}
-              label={opt.label} 
-              value={opt.value} 
-              color={pickerStyle.color}
-            />
-          ))}
-        </Picker>
-      </View>
+      <DropDownPicker
+        open={open}
+        value={value}
+        items={items}
+        setOpen={setOpen}
+        setValue={setValue}
+        setItems={setItems}
+        onChangeValue={(val) => onItemChange(val)}
+        style={{
+          backgroundColor: themeObject.colors.card,
+          borderColor: themeObject.colors.border,
+          borderRadius: 8,
+          minHeight: 60,
+        }}
+        textStyle={{
+          color: themeObject.colors.text,
+          fontSize: 16,
+        }}
+        dropDownContainerStyle={{
+          backgroundColor: themeObject.colors.card,
+          borderColor: themeObject.colors.border,
+        }}
+        selectedItemContainerStyle={{
+          backgroundColor: 'transparent', // или уберите эту строку
+        }}
+        selectedItemLabelStyle={{
+          color: themeObject.colors.primary,
+        }}
+        listItemLabelStyle={{
+          color: themeObject.colors.text,
+        }}
+        arrowIconStyle={{
+          tintColor: themeObject.colors.text,
+        }}
+        tickIconStyle={{
+          tintColor: themeObject.colors.primary,
+        }}
+      />
     </View>
   );
 }
