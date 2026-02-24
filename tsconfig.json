@@ -12,5 +12,5 @@
     "**/*.js",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "src/i18n/languageProvider.js"  ]
+, "src/language/languageProvider.js"  ]
 }

@@ -1,6 +1,6 @@
 import { ThemeContext } from "@/src/appearance/themeProvider";
 import { ThemeProvider } from "@/src/appearance/themeProvider.js";
-import { LanguageProvider } from "@/src/i18n/languageProvider";
+import { LanguageProvider } from "@/src/language/languageProvider";
 import { Stack } from "expo-router";
 import { useContext } from "react";
 import { StatusBar } from "react-native";

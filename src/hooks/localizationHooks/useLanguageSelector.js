@@ -1,4 +1,4 @@
-import { LanguageContext } from '@/src/i18n/languageProvider';
+import { LanguageContext } from '@/src/language/languageProvider';
 import { useContext, useEffect, useState } from 'react';
 
 export const useLanguageSelector = () => {

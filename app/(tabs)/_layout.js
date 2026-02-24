@@ -1,5 +1,5 @@
 import { ThemeContext } from '@/src/appearance/themeProvider';
-import { LanguageContext } from '@/src/i18n/languageProvider';
+import { LanguageContext } from '@/src/language/languageProvider';
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useContext } from 'react';

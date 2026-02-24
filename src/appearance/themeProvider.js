@@ -1,4 +1,4 @@
-import i18n from '@/src/i18n/i18nConst';
+import i18n from '@/src/language/i18nConst';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createContext, useEffect, useState } from 'react';
