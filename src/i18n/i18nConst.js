@@ -2,6 +2,11 @@ import { I18n } from 'i18n-js';
 
 const i18n = new I18n({
   en: { 
+    themes: {
+      dark: 'Dark',
+      light: 'Light'
+    },
+    theme: 'Theme',
     languages: {
       russian: 'Russian',
       english: 'English'
@@ -15,7 +20,12 @@ const i18n = new I18n({
     }, 
   },
   ru: {
-     languages: {
+    themes: {
+      dark: 'Тёмная',
+      light: 'Светлая'
+    },
+    theme: 'Тема',
+    languages: {
       russian: 'Русский',
       english: 'Английский'
     },
@@ -28,6 +38,5 @@ const i18n = new I18n({
     }, 
   }
 });
-
 
 export default i18n;

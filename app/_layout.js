@@ -1,14 +1,38 @@
+import { ThemeContext } from "@/src/appearance/themeProvider";
+import { ThemeProvider } from "@/src/appearance/themeProvider.js";
+import { LanguageProvider } from "@/src/i18n/languageProvider";
 import { Stack } from "expo-router";
-import { LanguageProvider } from '../src/i18n/languageContext';
+import { useContext } from "react";
+import { StatusBar } from "react-native";
+
+function RootContent() {
+  const themeContext = useContext(ThemeContext);
+  
+  if (!themeContext) {
+    return <SplashScreen />;
+  }
+  
+  const { themeObject } = themeContext;
+
+  return (
+    <>
+      <StatusBar 
+        barStyle={themeObject.dark ? "light-content" : "dark-content"}
+        backgroundColor={themeObject.colors.background}
+      />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
+    </>
+  );
+}
 
 export default function RootLayout() {
   return (
     <LanguageProvider>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{
-          headerShown: false
-        }}/>
-      </Stack>
-    </LanguageProvider>  
-  ) 
+      <ThemeProvider>
+        <RootContent />
+      </ThemeProvider>
+    </LanguageProvider>
+  );
 }

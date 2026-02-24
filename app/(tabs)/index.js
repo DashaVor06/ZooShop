@@ -3,7 +3,7 @@ import { useLanguageSelector } from '@/src/hooks/localizationHooks/useLanguageSe
 import { useContext } from 'react';
 import { Text, View } from 'react-native';
 
-export default function CatalogScreen() {
+export default function IndexScreen() {
   const { themeObject } = useContext(ThemeContext);
   const { selectedLanguage, languageOptions, handleLanguageChange, tLang } = useLanguageSelector();
 
@@ -17,7 +17,7 @@ export default function CatalogScreen() {
       }}
     >
       <Text style={{ color: themeObject.colors.text }}>
-        {tLang('tabBar.catalog')}
+        {tLang('tabBar.home')}
       </Text>
     </View>
   );

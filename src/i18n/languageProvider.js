@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import i18n from './localization';
+import React, { createContext, useEffect, useState } from 'react';
+import i18n from './i18nConst';
 
-const LanguageContext = createContext();
+export const LanguageContext = createContext();
 
 export const LanguageProvider = ({ children }) => {
   const [locale, setLocale] = useState(i18n.locale);
@@ -16,20 +16,18 @@ export const LanguageProvider = ({ children }) => {
     try {
       const savedLanguage = await AsyncStorage.getItem('userLanguage');
       if (savedLanguage && savedLanguage !== i18n.locale) {
-        // Меняем язык, если сохраненный отличается от текущего
         i18n.locale = savedLanguage;
         setLocale(savedLanguage);
       }
     } catch (error) {
       console.log('Error loading language:', error);
     } finally {
-      // ВАЖНО: устанавливаем isLoading в false после загрузки
       setIsLoading(false);
     }
   };
 
   const changeLanguage = async (lang) => {
-    if (lang === locale) return; // Не делаем ничего, если язык не изменился
+    if (lang === locale) return;
     
     try {
       i18n.locale = lang;
@@ -38,15 +36,14 @@ export const LanguageProvider = ({ children }) => {
     } catch (error) {
       console.log('Error saving language:', error);
     }
-    // НЕ меняем isLoading здесь!
   };
 
-  const t = (key) => i18n.t(key);
+  const tLang = (key) => i18n.t(key);
 
   const value = {
     locale,
     changeLanguage,
-    t,
+    tLang,
     isLoading
   };
 
@@ -57,10 +54,3 @@ export const LanguageProvider = ({ children }) => {
   );
 };
 
-export const useLanguage = () => {
-  const context = useContext(LanguageContext);
-  if (!context) {
-    throw new Error('useLanguage must be used within LanguageProvider');
-  }
-  return context;
-};
