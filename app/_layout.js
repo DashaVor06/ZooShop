@@ -1,9 +1,12 @@
-import { ThemeContext } from "@/src/appearance/themeProvider";
-import { ThemeProvider } from "@/src/appearance/themeProvider.js";
-import { LanguageProvider } from "@/src/language/languageProvider";
-import { Stack } from "expo-router";
+import { SplashScreen, Stack } from "expo-router";
+import { SQLiteProvider } from 'expo-sqlite';
 import { useContext } from "react";
 import { StatusBar } from "react-native";
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { migrateDbIfNeeded } from "../src/database/migrations";
+import { LanguageProvider } from "../src/localization/languageProvider";
+import { ThemeContext } from "../src/theme/themeProvider";
+import { ThemeProvider } from "../src/theme/themeProvider.js";
 
 function RootContent() {
   const themeContext = useContext(ThemeContext);
@@ -27,12 +30,17 @@ function RootContent() {
   );
 }
 
+
 export default function RootLayout() {
   return (
-    <LanguageProvider>
-      <ThemeProvider>
-        <RootContent />
-      </ThemeProvider>
-    </LanguageProvider>
+    <SafeAreaProvider>
+      <SQLiteProvider databaseName="test.db" onInit={migrateDbIfNeeded}>
+        <LanguageProvider>
+          <ThemeProvider>
+            <RootContent />
+          </ThemeProvider>
+        </LanguageProvider>
+      </SQLiteProvider>
+    </SafeAreaProvider>    
   );
 }
