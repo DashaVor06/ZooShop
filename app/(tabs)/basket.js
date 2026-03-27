@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 import { Text, View } from 'react-native';
-import { useLanguageSelector } from '../../src/hooks/localizationHooks/useLanguageSelector';
-import { ThemeContext } from '../../src/theme/themeProvider';
+import { useLanguageSelector } from '../../src/viewModel/hooks/useLanguageSelector';
+import { ThemeContext } from '../../src/viewModel/providers/themeProvider';
 
 export default function BasketScreen() {
   const { themeObject } = useContext(ThemeContext);

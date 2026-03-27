@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
-import { LanguageContext } from '../../localization/languageProvider';
+import { LanguageContext } from '../providers/languageProvider';
 
 export const useLanguageSelector = () => {
   const { locale, changeLanguage, tLang } = useContext(LanguageContext);

@@ -3,10 +3,9 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { useContext } from "react";
 import { StatusBar } from "react-native";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { migrateDbIfNeeded } from "../src/database/migrations";
-import { LanguageProvider } from "../src/localization/languageProvider";
-import { ThemeContext } from "../src/theme/themeProvider";
-import { ThemeProvider } from "../src/theme/themeProvider.js";
+import { migrateDbIfNeeded } from "../src/model/localdbInit";
+import { LanguageProvider } from "../src/viewModel/providers/languageProvider";
+import { ThemeContext, ThemeProvider } from "../src/viewModel/providers/themeProvider";
 
 function RootContent() {
   const themeContext = useContext(ThemeContext);
@@ -30,11 +29,10 @@ function RootContent() {
   );
 }
 
-
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <SQLiteProvider databaseName="test.db" onInit={migrateDbIfNeeded}>
+      <SQLiteProvider databaseName="catalog.db" onInit={migrateDbIfNeeded}>
         <LanguageProvider>
           <ThemeProvider>
             <RootContent />

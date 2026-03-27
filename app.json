@@ -72,7 +72,8 @@
       "router": {},
       "eas": {
         "projectId": "7b81c25c-4a8a-4e99-8a3d-dd036f759a3a"
-      }
+      },
+      "imagekitPrivateKey": "process.env.EXPO_PUBLIC_IMAGEKIT_PRIVATE_KEY"
     }
   }
 }

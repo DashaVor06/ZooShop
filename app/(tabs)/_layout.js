@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useContext } from 'react';
-import { LanguageContext } from '../../src/localization/languageProvider';
-import { ThemeContext } from '../../src/theme/themeProvider';
+import { LanguageContext } from '../../src/viewModel/providers/languageProvider';
+import { ThemeContext } from '../../src/viewModel/providers/themeProvider';
 
 export default function TabsLayout() {
   const { tLang, locale } = useContext(LanguageContext);

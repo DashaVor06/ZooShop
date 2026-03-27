@@ -28,7 +28,21 @@ const i18n = new I18n({
       errorLoad: 'Error loading data',
       empty: 'No items found',
       confirmDelete: 'Confirm deletion',
-      confirmDeleteMessage: 'Are you sure you want to delete this item?'
+      confirmDeleteMessage: 'Are you sure you want to delete this item?',
+      changeImage: 'Change image',
+      selectImage: 'Select image',
+      permissionError: 'Need permission to pick images',
+      pickingImageError: 'Failed to pick image',
+      loadError: 'Failed to load data',
+      empty: 'Catalog is empty',
+      // Новые ключи для ImageKit
+      uploadingImage: 'Uploading image...',
+      imageUploadSuccess: 'Image uploaded successfully',
+      uploadImageError: 'Failed to upload image',
+      fileTooLarge: 'File is too large (max 5MB)',
+      invalidRequest: 'Invalid request',
+      authError: 'Authentication failed',
+      uploadFailed: 'Upload failed'
     },
     themes: {
       dark: 'Dark',
@@ -45,6 +59,10 @@ const i18n = new I18n({
       settings: 'Settings',
       basket: 'Basket',
       catalog: 'Catalog'
+    },
+    network: {
+      offlineMode: 'Offline mode',
+      syncing: 'Syncronization'
     }
   },
   ru: {
@@ -74,7 +92,21 @@ const i18n = new I18n({
       errorLoad: 'Ошибка загрузки данных',
       empty: 'Товары не найдены',
       confirmDelete: 'Подтверждение удаления',
-      confirmDeleteMessage: 'Вы уверены, что хотите удалить этот товар?'
+      confirmDeleteMessage: 'Вы уверены, что хотите удалить этот товар?',
+      changeImage: 'Изменить картинку',
+      selectImage: 'Выбрать картинку',
+      permissionError: 'Необходимо разрешение на доступ к галерее',
+      pickingImageError: 'Не удалось выбрать изображение',
+      loadError: 'Не удалось загрузить данные',
+      empty: 'Товары не найдены',
+      // Новые ключи для ImageKit
+      uploadingImage: 'Загрузка изображения...',
+      imageUploadSuccess: 'Изображение успешно загружено',
+      uploadImageError: 'Не удалось загрузить изображение',
+      fileTooLarge: 'Файл слишком большой (макс. 5МБ)',
+      invalidRequest: 'Неверный запрос',
+      authError: 'Ошибка аутентификации',
+      uploadFailed: 'Ошибка загрузки'
     },
     themes: {
       dark: 'Тёмная',
@@ -91,6 +123,10 @@ const i18n = new I18n({
       settings: 'Настройки',
       basket: 'Корзина',
       catalog: 'Каталог'
+    },
+    network: {
+      offlineMode: 'Оффлайн режим',
+      syncing: 'Синхронизация'
     }
   }
 });

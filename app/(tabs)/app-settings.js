@@ -2,8 +2,8 @@ import { DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from "react-native";
 import DropDownPicker from 'react-native-dropdown-picker';
-import { useLanguageSelector } from '../../src/hooks/localizationHooks/useLanguageSelector';
-import { useThemeSelector } from '../../src/hooks/themeHooks/useThemeSelector';
+import { useLanguageSelector } from '../../src/viewModel/hooks/useLanguageSelector';
+import { useThemeSelector } from '../../src/viewModel/hooks/useThemeSelector';
 
 export default function SettingsScreen() {
   const { selectedLanguage, languageOptions, handleLanguageChange, tLang } = useLanguageSelector();

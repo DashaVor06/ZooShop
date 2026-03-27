@@ -1,6 +1,6 @@
 import { DarkTheme } from '@react-navigation/native';
 import { useContext, useEffect, useState } from 'react';
-import { ThemeContext } from '../../theme/themeProvider';
+import { ThemeContext } from '../providers/themeProvider';
 
 export const useThemeSelector = () => {
   const { themeObject, changeTheme, tTheme } = useContext(ThemeContext);
