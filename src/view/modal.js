@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import { styles } from "./catalogStyles";
 
-
 export const renderModal = ({
   isEdit,
   modalVisible,
@@ -26,20 +25,24 @@ export const renderModal = ({
   setFormPicture,
   resetForm,
   setModalVisible,
-  setEditModalVisible,
+  setEditModalVisible, // Убедитесь, что передаете это в CatalogScreen
   handleAddItem,
   handleUpdateItem,
   loadImage,
   showNotification,
   currentItem,
-  deleteImageFromImageKit
 }) => {
 
+    // Выбор правильного стейта видимости
+  const isVisible = isEdit ? editModalVisible : modalVisible;
+  if (!isVisible) return null;
+  
   const handlePickImage = async () => {
     try {
       let imageUrl;
       
-      if (isEdit && currentItem) {
+      // Логика выбора картинки
+      if (isEdit && currentItem && currentItem.image_file_id) {
         imageUrl = await loadImage(true, currentItem.image_file_id);
       } else {
         imageUrl = await loadImage(false);
@@ -49,18 +52,37 @@ export const renderModal = ({
         setFormPicture(imageUrl);
       }
     } catch (error) {
-      showNotification(tLang(error.message), "error");
+      // Защита на случай, если showNotification не передан
+      if (showNotification) {
+        showNotification(tLang(error.message) || "Ошибка выбора изображения", "error");
+      }
     }
   };
 
   const handleRemoveImage = () => {
     setFormPicture(null);
   };
-
-  const isVisible = isEdit ? editModalVisible : modalVisible;
+  
   const onClose = () => {
-    isEdit ? setEditModalVisible(false) : setModalVisible(false);
+    // Исправлено: корректный вызов функций закрытия
+    if (isEdit) {
+      if (typeof setEditModalVisible === 'function') {
+        setEditModalVisible(false);
+      }
+    } else {
+      if (typeof setModalVisible === 'function') {
+        setModalVisible(false);
+      }
+    }
     resetForm();
+  };
+
+  // Хелпер для определения URI картинки
+  const getImageSource = () => {
+    if (!formPicture) return null;
+    // Если это объект (из ImageKit или галереи Expo) берем url/uri, если строка — используем напрямую
+    const uri = formPicture.url || formPicture.uri || (typeof formPicture === 'string' ? formPicture : null);
+    return uri ? { uri } : null;
   };
 
   return (
@@ -73,10 +95,7 @@ export const renderModal = ({
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: themeObject.colors.background }]}>
           <Text style={[styles.modalTitle, { color: themeObject.colors.text }]}>
-            {isEdit 
-              ? (tLang('catalog.editTitle'))
-              : (tLang('catalog.addTitle'))
-            }
+            {isEdit ? tLang('catalog.editTitle') : tLang('catalog.addTitle')}
           </Text>
           
           <TextInput
@@ -126,17 +145,14 @@ export const renderModal = ({
             onPress={handlePickImage}
           >
             <Text style={[styles.imagePickerText, { color: themeObject.colors.primary }]}>
-              {formPicture 
-                ? (tLang('catalog.changeImage'))
-                : (tLang('catalog.selectImage'))
-              }
+              {formPicture ? tLang('catalog.changeImage') : tLang('catalog.selectImage')}
             </Text>
           </TouchableOpacity>
 
           {formPicture ? (
             <View style={styles.imagePreviewContainer}>
               <Image 
-                source={{ uri: typeof formPicture === 'object' ? formPicture.url : formPicture }} 
+                source={getImageSource()} 
                 style={styles.imagePreview}
                 resizeMode="cover"
               />
@@ -164,10 +180,7 @@ export const renderModal = ({
               onPress={isEdit ? handleUpdateItem : handleAddItem}
             >
               <Text style={styles.saveButtonText}>
-                {isEdit 
-                  ? (tLang('common.save'))
-                  : (tLang('common.add'))
-                }
+                {isEdit ? tLang('common.save') : tLang('common.add')}
               </Text>
             </TouchableOpacity>
           </View>

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "checkJs": false,
+    "resolveJsonModule": true,
+    "jsx": "react-native"
+  },
+  "exclude": [
+    "node_modules",
+    ".expo",
+    "web-build"
+  ]
+}

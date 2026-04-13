@@ -1,4 +1,4 @@
-import { SplashScreen, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import { SQLiteProvider } from 'expo-sqlite';
 import { useContext } from "react";
 import { StatusBar } from "react-native";
@@ -9,10 +9,6 @@ import { ThemeContext, ThemeProvider } from "../src/viewModel/providers/themePro
 
 function RootContent() {
   const themeContext = useContext(ThemeContext);
-  
-  if (!themeContext) {
-    return <SplashScreen />;
-  }
   
   const { themeObject } = themeContext;
 

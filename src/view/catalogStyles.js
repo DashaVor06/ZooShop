@@ -14,9 +14,14 @@ export const styles = StyleSheet.create({
     fontSize: 16,
   },
   listContainer: {
-    padding: 16,
+    paddingHorizontal: 16, // Отступы по бокам для всего списка
+    paddingTop: 16,        // Отступ сверху
+    paddingBottom: 32,     // Запас снизу для удобства скролла
   },
   productCard: {
+    alignSelf: 'center',    // Центрируем карточку
+    width: '100%',         // Она будет занимать всю доступную ширину контейнера
+    maxWidth: 500,         // ОГРАНИЧЕНИЕ: карточка не станет шире 500 единиц (важно для планшетов)
     borderRadius: 12,
     marginBottom: 16,
     shadowColor: "#000",
@@ -32,9 +37,10 @@ export const styles = StyleSheet.create({
   imageContainer: {
     width: "100%",
     height: 200,
-    backgroundColor: "#ffffff",
+    backgroundColor: "transparent",
     justifyContent: "center",
     alignItems: "center",
+    padding: 12,
   },
   productImage: {
     width: "100%",
@@ -275,10 +281,12 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-offlineBanner: {
+  offlineBanner: {
     backgroundColor: "#ff3b30",
-    padding: 8,
-    alignItems: "center"
+    padding: 6,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
   },
   offlineText: {
     color: "white",

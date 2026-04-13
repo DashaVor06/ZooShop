@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 
 export const initializeSupabase = async () => {
   try {
-    const { data: items, error, count } = await supabase
+    const { data: items, error} = await supabase
       .from('items')
       .select('*', { count: 'exact', head: false });
     
@@ -20,7 +20,7 @@ export const initializeSupabase = async () => {
         image_file_id: item.image_file_id || null
       }));
       
-      const { data: insertedData, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('items')
         .insert(itemsToInsert)
         .select();
