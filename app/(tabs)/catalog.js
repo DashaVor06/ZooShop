@@ -3,7 +3,6 @@ import { useNavigation } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import React, { useContext, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   Text,
@@ -160,13 +159,6 @@ export default function CatalogScreen() {
 
   const toggleExpand = (id) => setExpandedId(expandedId === id ? null : id);
 
-  if (loading) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: themeObject.colors.background }]}>
-        <ActivityIndicator size="large" color={themeObject.colors.primary} />
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: themeObject.colors.background }]}>
@@ -176,8 +168,8 @@ export default function CatalogScreen() {
         </View>
       )}
       {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={themeObject.colors.primary} />
+        <View style={styles.syncBanner}>
+          <Text style={styles.syncText}>{tLang('network.syncing')}</Text>
         </View>
       ) : (
       <FlatList
