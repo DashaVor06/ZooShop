@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   Modal,
@@ -8,42 +8,62 @@ import {
   View,
 } from "react-native";
 import { styles } from "./catalogStyles";
+import { SimplePicker } from "./simplePicker";
 
-export const renderModal = ({
-  isEdit,
-  modalVisible,
-  editModalVisible,
-  themeObject,
-  tLang,
-  formName,
-  setFormName,
-  formDescription,
-  setFormDescription,
-  formPrice,
-  setFormPrice,
-  formPicture,
-  setFormPicture,
-  resetForm,
-  setModalVisible,
-  setEditModalVisible, // Убедитесь, что передаете это в CatalogScreen
-  handleAddItem,
-  handleUpdateItem,
-  loadImage,
-  showNotification,
-  currentItem,
-}) => {
+export const RenderModal = (props) => {
+  const {
+    isEdit,
+    modalVisible,
+    editModalVisible,
+    themeObject,
+    tLang,
+    formName,
+    setFormName,
+    formDescription,
+    setFormDescription,
+    formPrice,
+    setFormPrice,
+    formCategory,
+    setFormCategory,
+    formPicture,
+    setFormPicture,
+    resetForm,
+    setModalVisible,
+    setEditModalVisible,
+    handleAddItem,
+    handleUpdateItem,
+    loadImage,
+    showNotification,
+    currentItem,
+    animalsList = [],
+  } = props;
 
-    // Выбор правильного стейта видимости
+  const [categoryItems, setCategoryItems] = useState([]);
+
   const isVisible = isEdit ? editModalVisible : modalVisible;
+  
+  useEffect(() => {    
+    if (!animalsList || animalsList.length === 0) {
+      setCategoryItems([]);
+      return;
+    }
+    
+    const formatted = animalsList.map(animal => ({
+      label: animal.an_name || 'Без названия', 
+      value: animal.an_id,
+    }));
+    
+    setCategoryItems(formatted);
+  }, [animalsList, isVisible, isEdit]);
+
   if (!isVisible) return null;
   
   const handlePickImage = async () => {
     try {
       let imageUrl;
       
-      // Логика выбора картинки
-      if (isEdit && currentItem && currentItem.image_file_id) {
-        imageUrl = await loadImage(true, currentItem.image_file_id);
+      if (isEdit && currentItem && currentItem.it_image_file_id) {
+        imageUrl = await loadImage(true, currentItem.it_image_file_id);
       } else {
         imageUrl = await loadImage(false);
       }
@@ -52,9 +72,8 @@ export const renderModal = ({
         setFormPicture(imageUrl);
       }
     } catch (error) {
-      // Защита на случай, если showNotification не передан
       if (showNotification) {
-        showNotification(tLang(error.message) || "Ошибка выбора изображения", "error");
+        showNotification(tLang(error.message), "error");
       }
     }
   };
@@ -64,7 +83,6 @@ export const renderModal = ({
   };
   
   const onClose = () => {
-    // Исправлено: корректный вызов функций закрытия
     if (isEdit) {
       if (typeof setEditModalVisible === 'function') {
         setEditModalVisible(false);
@@ -77,10 +95,8 @@ export const renderModal = ({
     resetForm();
   };
 
-  // Хелпер для определения URI картинки
   const getImageSource = () => {
     if (!formPicture) return null;
-    // Если это объект (из ImageKit или галереи Expo) берем url/uri, если строка — используем напрямую
     const uri = formPicture.url || formPicture.uri || (typeof formPicture === 'string' ? formPicture : null);
     return uri ? { uri } : null;
   };
@@ -109,6 +125,20 @@ export const renderModal = ({
             value={formName}
             onChangeText={setFormName}
           />
+
+          {categoryItems.length > 0 ? (
+            <SimplePicker
+              selectedValue={formCategory}
+              onValueChange={setFormCategory}
+              items={categoryItems}
+              placeholder={tLang('catalog.selectCategory') || 'Выберите категорию'}
+              themeObject={themeObject}
+            />
+          ) : (
+            <Text style={{ color: 'red', padding: 10 }}>
+              Нет доступных категорий. Проверьте загрузку данных.
+            </Text>
+          )}
 
           <TextInput
             style={[styles.input, styles.textArea, { 

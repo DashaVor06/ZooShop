@@ -7,7 +7,8 @@ const i18n = new I18n({
       save: 'Save',
       add: 'Add',
       delete: 'Delete',
-      loading: 'Loading...'
+      loading: 'Loading...',
+      success: 'Success',
     },
     catalog: {
       price: 'Price',
@@ -35,14 +36,19 @@ const i18n = new I18n({
       pickingImageError: 'Failed to pick image',
       loadError: 'Failed to load data',
       empty: 'Catalog is empty',
-      // Новые ключи для ImageKit
       uploadingImage: 'Uploading image...',
       imageUploadSuccess: 'Image uploaded successfully',
       uploadImageError: 'Failed to upload image',
       fileTooLarge: 'File is too large (max 5MB)',
       invalidRequest: 'Invalid request',
       authError: 'Authentication failed',
-      uploadFailed: 'Upload failed'
+      uploadFailed: 'Upload failed',
+      category: 'Категория',
+      selectCategory: 'Select category',
+      searchPlaceholder: "Search",
+      noSearchResults: "Nothing was found",
+      noItems: "There is no goods",
+      sortBy: "Sort by:"
     },
     themes: {
       dark: 'Dark',
@@ -71,7 +77,8 @@ const i18n = new I18n({
       save: 'Сохранить',
       add: 'Добавить',
       delete: 'Удалить',
-      loading: 'Загрузка...'
+      loading: 'Загрузка...',
+      success: 'Успешно',
     },
     catalog: {
       price: 'Цена',
@@ -99,14 +106,19 @@ const i18n = new I18n({
       pickingImageError: 'Не удалось выбрать изображение',
       loadError: 'Не удалось загрузить данные',
       empty: 'Товары не найдены',
-      // Новые ключи для ImageKit
       uploadingImage: 'Загрузка изображения...',
       imageUploadSuccess: 'Изображение успешно загружено',
       uploadImageError: 'Не удалось загрузить изображение',
       fileTooLarge: 'Файл слишком большой (макс. 5МБ)',
       invalidRequest: 'Неверный запрос',
       authError: 'Ошибка аутентификации',
-      uploadFailed: 'Ошибка загрузки'
+      uploadFailed: 'Ошибка загрузки',
+      category: 'Категория',
+      selectCategory: 'Выберите категорию',
+      searchPlaceholder: "Поиск товаров",
+      noSearchResults: "Ничего не найдено",
+      noItems: "Товаров пока нет",
+      sortBy: "Сортировка по:"
     },
     themes: {
       dark: 'Тёмная',

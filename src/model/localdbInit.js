@@ -3,29 +3,33 @@ export async function migrateDbIfNeeded(db) {
     PRAGMA journal_mode = 'wal';
     
     CREATE TABLE IF NOT EXISTS items (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL, 
-      description TEXT NOT NULL, 
-      price DECIMAL(10,2), 
-      image_url TEXT,
-      image_file_id TEXT,
-      synced INTEGER DEFAULT 0
+      it_id TEXT PRIMARY KEY,
+      it_name TEXT NOT NULL, 
+      it_description TEXT NOT NULL, 
+      it_price DECIMAL(10,2), 
+      it_image_url TEXT,
+      it_image_file_id TEXT,
+      it_synced INTEGER DEFAULT 0,
+      it_deleted INTEGER DEFAULT 0,
+      it_an_id TEXT
     );
   `);
 
-  try {
-    const columns = await db.getAllAsync('PRAGMA table_info(items)');
-    const columnNames = columns.map(col => col.name);
-    
-    const columnsToAdd = [];
-    if (!columnNames.includes('synced')) columnsToAdd.push('synced INTEGER DEFAULT 0');
-    if (!columnNames.includes('deleted')) columnsToAdd.push('deleted INTEGER DEFAULT 0');
-    
-    for (const colDef of columnsToAdd) {
-      await db.execAsync(`ALTER TABLE items ADD COLUMN ${colDef};`);
-    }
-  } 
-  catch (error) {
-    console.error('Error adding columns:', error);
-  } 
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS animals (
+      an_id TEXT PRIMARY KEY,
+      an_name TEXT NOT NULL
+    );
+  `);
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS weather_cache (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      temp REAL,
+      description TEXT,
+      icon TEXT,
+      city TEXT,
+      timestamp INTEGER
+    );
+  `);
 }

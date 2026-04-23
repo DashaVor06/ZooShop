@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useState } from 'react';
 
 export const useCatalogForm = () => {
-  const [formName, setFormName] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formPrice, setFormPrice] = useState("");
-  const [formPicture, setFormPicture] = useState("");
+  const [formName, setFormName] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formPrice, setFormPrice] = useState('');
+  const [formCategory, setFormCategory] = useState(null);
+  const [formPicture, setFormPicture] = useState(null);
 
   const resetForm = () => {
-    setFormName("");
-    setFormDescription("");
-    setFormPrice("");
-    setFormPicture("");
+    setFormName('');
+    setFormDescription('');
+    setFormPrice('');
+    setFormCategory(null);
+    setFormPicture(null);
   };
 
   return {
@@ -20,6 +22,8 @@ export const useCatalogForm = () => {
     setFormDescription,
     formPrice,
     setFormPrice,
+    formCategory,
+    setFormCategory,
     formPicture,
     setFormPicture,
     resetForm,

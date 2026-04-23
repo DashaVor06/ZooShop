@@ -16,6 +16,7 @@ export const renderItem = ({
   toggleExpand,
   openEditModal,
   confirmDelete,
+  animalsList = [],
 }) => {
     const truncateDescription = (description, maxLength = 100) => {
       if (!description) return "";
@@ -27,10 +28,18 @@ export const renderItem = ({
       if (!price) return "";
       return Number(price).toFixed(2).replace('.', ',');
     };
-    const isExpanded = expandedId === item.id;
+    
+    const isExpanded = expandedId === item.it_id;
     const displayDescription = isExpanded 
-      ? item.description 
-      : truncateDescription(item.description, 80);
+      ? item.it_description
+      : truncateDescription(item.it_description, 80);
+
+    const getAnimalName = (animalId, animalsList) => {
+      if (!animalId) 
+        return 'Без категории';
+      const animal = animalsList.find(a => (a.an_id === animalId || a.id === animalId));
+      return animal ? animal.an_name : 'Без категории';
+    };
 
     return (
       <View style={[
@@ -39,12 +48,12 @@ export const renderItem = ({
       ]}>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => toggleExpand(item.id)}
+          onPress={() => toggleExpand(item.it_id)}
         >
-          {item.image_url ? (
+          {item.it_image_url ? (
             <View style={styles.imageContainer}>
               <Image
-                source={{ uri: item.image_url }}
+                source={{ uri: item.it_image_url }}
                 style={styles.productImage}
                 resizeMode="contain"
               />
@@ -52,8 +61,19 @@ export const renderItem = ({
           ) : null}
           
           <View style={styles.cardContent}>
+            {/* Категория жирным шрифтом перед названием */}
+            <Text style={[styles.itemCategory, { 
+              color: themeObject.colors.primary,
+              fontWeight: '700',
+              fontSize: 14,
+              marginBottom: 4,
+            }]}>
+              {getAnimalName(item.it_an_id, animalsList)}
+            </Text>
+            
+            {/* Название товара */}
             <Text style={[styles.productName, { color: themeObject.colors.text }]}>
-              {item.name}
+              {item.it_name}
             </Text>
             
             <View style={styles.divider} />
@@ -65,13 +85,13 @@ export const renderItem = ({
               {displayDescription}
             </Text>
             
-            {item.price && (
+            {item.it_price && (
               <View style={styles.priceContainer}>
                 <Text style={[styles.priceLabel, { color: themeObject.colors.secondaryText || "#999999" }]}>
                   {tLang('catalog.price') || "Цена:"}
                 </Text>
                 <Text style={[styles.priceValue, { color: themeObject.colors.primary || "#2ecc71" }]}>
-                  {formatPrice(item.price)} Br
+                  {formatPrice(item.it_price)} Br
                 </Text>
               </View>
             )}
@@ -87,7 +107,7 @@ export const renderItem = ({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => confirmDelete(item.id)}
+            onPress={() => confirmDelete(item.it_id)}
           >
             <Ionicons name="trash" size={24} color="#f44336" />
           </TouchableOpacity>
