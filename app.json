@@ -17,7 +17,10 @@
         "foregroundImage": "./assets/images/splash-icon.png",
         "backgroundColor": "#E6F4FE"
       },
-      "package": "com.anonymous.myfirstapp"
+      "package": "com.anonymous.myfirstapp",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -26,6 +29,16 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/splash-icon.png",
+          "color": "#ffffff",
+          "permissions": [
+            "SCHEDULE_EXACT_ALARM"
+          ]
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -60,10 +73,13 @@
             "useSQLCipher": false
           },
           "ios": {
-            "customBuildFlags": ["-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"]
+            "customBuildFlags": [
+              "-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"
+            ]
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
