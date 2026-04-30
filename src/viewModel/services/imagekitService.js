@@ -3,9 +3,9 @@ import * as ImagePicker from 'expo-image-picker';
 
 export const imagekitService = () => {
   
-  const loadImage = async () => {
+  const loadImage = async (isEdit, fileId, sourceType = 'library') => {
     try {
-      const imageUri = await pickImage();
+      const imageUri = await pickImage(sourceType);
       return imageUri;
     } 
     catch (error) {
@@ -13,26 +13,37 @@ export const imagekitService = () => {
     }
   };
 
-  const pickImage = async () => {
+  const pickImage = async (sourceType) => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      let permissionResult;
+      
+      if (sourceType === 'camera') {
+        permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      } else {
+        permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
       
       if (!permissionResult.granted) {
-        throw new Error('catalog.permissionError')
+        throw new Error(sourceType === 'camera' ? 'catalog.cameraPermissionError' : 'catalog.permissionError');
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const options = {
         mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.7,
-      });
+      };
+
+      const result = sourceType === 'camera' 
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
 
       if (!result.canceled) {
         return result.assets[0].uri;
       }    
       return null;
     } 
-    catch {
+    catch (error) {
+      if (error.message.includes('Permission')) throw error;
       throw new Error('catalog.pickingImageError');
     }
   }
@@ -47,7 +58,7 @@ export const imagekitService = () => {
       formData.append('file', {
         uri: imageUri,
         name: filename,
-        type: `image/${fileType}`,
+        type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`,
       });
       
       formData.append('fileName', filename);
@@ -80,13 +91,7 @@ export const imagekitService = () => {
 
   const deleteImageFromImageKit = async (fileId) => {
     try {
-      if (!fileId) {
-        console.log('No fileId provided for deletion');
-        return false;
-      }
-      
-      console.log('Deleting image with fileId:', fileId);
-      
+      if (!fileId) return false;
       const encodedFileId = encodeURIComponent(fileId);
       
       const response = await fetch(`https://api.imagekit.io/v1/files/${encodedFileId}`, {
@@ -96,19 +101,11 @@ export const imagekitService = () => {
         },
       });
       
-      console.log('Delete response status:', response.status);
-      
-      if (!response.ok && response.status !== 404) {
-        const errorData = await response.json();
-        console.error('Delete error details:', errorData);
-        return false;
-      }
-      
-      console.log('Image deleted successfully');
+      if (!response.ok && response.status !== 404) return false;
       return true;
     } 
     catch (error) {
-      console.error('Error deleting image from ImageKit:', error);
+      console.error('Error deleting image:', error);
       return false;
     }
   };

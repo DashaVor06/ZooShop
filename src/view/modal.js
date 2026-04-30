@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   Image,
   Modal,
   Text,
@@ -41,63 +42,73 @@ export const RenderModal = (props) => {
   const [categoryItems, setCategoryItems] = useState([]);
 
   const isVisible = isEdit ? editModalVisible : modalVisible;
-  
-  useEffect(() => {    
-    if (!animalsList || animalsList.length === 0) {
-      setCategoryItems([]);
-      return;
+
+  useEffect(() => {
+    if (isVisible && animalsList?.length > 0) {
+      const formatted = animalsList.map((animal) => ({
+        label: animal.an_name || "---",
+        value: animal.an_id,
+      }));
+      setCategoryItems(formatted);
     }
-    
-    const formatted = animalsList.map(animal => ({
-      label: animal.an_name || 'Без названия', 
-      value: animal.an_id,
-    }));
-    
-    setCategoryItems(formatted);
-  }, [animalsList, isVisible, isEdit]);
+  }, [animalsList, isVisible]);
 
   if (!isVisible) return null;
-  
-  const handlePickImage = async () => {
+
+  const onPickImage = async (sourceType) => {
     try {
-      let imageUrl;
-      
-      if (isEdit && currentItem && currentItem.it_image_file_id) {
-        imageUrl = await loadImage(true, currentItem.it_image_file_id);
+      let resultUri;
+      if (isEdit && currentItem?.it_image_file_id) {
+        resultUri = await loadImage(true, currentItem.it_image_file_id, sourceType);
       } else {
-        imageUrl = await loadImage(false);
+        resultUri = await loadImage(false, null, sourceType);
       }
-      
-      if (imageUrl) {
-        setFormPicture(imageUrl);
+
+      if (resultUri) {
+        setFormPicture(resultUri);
       }
     } catch (error) {
       if (showNotification) {
-        showNotification(tLang(error.message), "error");
+        showNotification(tLang(error.message) || error.message, "error");
       }
     }
   };
 
-  const handleRemoveImage = () => {
-    setFormPicture(null);
+  const handleImagePickerPress = () => {
+    Alert.alert(
+      tLang("catalog.selectImageSource") || "Изображение товара",
+      tLang("catalog.selectImageMessage") || "Выберите способ загрузки",
+      [
+        {
+          text: tLang("catalog.camera") || "Сделать фото",
+          onPress: () => onPickImage("camera"),
+        },
+        {
+          text: tLang("catalog.gallery") || "Выбрать из галереи",
+          onPress: () => onPickImage("library"),
+        },
+        {
+          text: tLang("common.cancel") || "Отмена",
+          style: "cancel",
+        },
+      ]
+    );
   };
-  
-  const onClose = () => {
+
+  const handleRemoveImage = () => setFormPicture(null);
+
+  const handleClose = () => {
     if (isEdit) {
-      if (typeof setEditModalVisible === 'function') {
-        setEditModalVisible(false);
-      }
+      setEditModalVisible(false);
     } else {
-      if (typeof setModalVisible === 'function') {
-        setModalVisible(false);
-      }
+      setModalVisible(false);
     }
     resetForm();
   };
 
   const getImageSource = () => {
     if (!formPicture) return null;
-    const uri = formPicture.url || formPicture.uri || (typeof formPicture === 'string' ? formPicture : null);
+    const uri = formPicture.url || formPicture.uri || (typeof formPicture === "string" ? formPicture : null);
     return uri ? { uri } : null;
   };
 
@@ -106,114 +117,115 @@ export const RenderModal = (props) => {
       animationType="slide"
       transparent={true}
       visible={isVisible}
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: themeObject.colors.background }]}>
-          <Text style={[styles.modalTitle, { color: themeObject.colors.text }]}>
-            {isEdit ? tLang('catalog.editTitle') : tLang('catalog.addTitle')}
-          </Text>
           
+          {/* Заголовок */}
+          <Text style={[styles.modalTitle, { color: themeObject.colors.text }]}>
+            {isEdit ? tLang("catalog.editTitle") : tLang("catalog.addTitle")}
+          </Text>
+
+          {/* Поле: Название */}
           <TextInput
             style={[styles.input, { 
-              backgroundColor: themeObject.colors.inputBackground,
+              backgroundColor: themeObject.colors.inputBackground, 
               color: themeObject.colors.text, 
-              borderColor: themeObject.colors.border
+              borderColor: themeObject.colors.border 
             }]}
-            placeholder={tLang('catalog.namePlaceholder')}
-            placeholderTextColor={themeObject.colors.placeholder || "#888888"}
+            placeholder={tLang("catalog.namePlaceholder")}
+            placeholderTextColor={themeObject.colors.placeholder}
             value={formName}
             onChangeText={setFormName}
           />
 
+          {/* Поле: Категория (Picker) */}
           {categoryItems.length > 0 ? (
             <SimplePicker
               selectedValue={formCategory}
               onValueChange={setFormCategory}
               items={categoryItems}
-              placeholder={tLang('catalog.selectCategory') || 'Выберите категорию'}
+              placeholder={tLang("catalog.selectCategory")}
               themeObject={themeObject}
             />
           ) : (
-            <Text style={{ color: 'red', padding: 10 }}>
-              Нет доступных категорий. Проверьте загрузку данных.
+            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+              {tLang("catalog.noCategoriesAvailable")}
             </Text>
           )}
 
+          {/* Поле: Описание */}
           <TextInput
             style={[styles.input, styles.textArea, { 
-              backgroundColor: themeObject.colors.inputBackground,
-              color: themeObject.colors.text,
-              borderColor: themeObject.colors.border
+              backgroundColor: themeObject.colors.inputBackground, 
+              color: themeObject.colors.text, 
+              borderColor: themeObject.colors.border 
             }]}
-            placeholder={tLang('catalog.descriptionPlaceholder')}
-            placeholderTextColor={themeObject.colors.placeholder || "#888888"}
+            placeholder={tLang("catalog.descriptionPlaceholder")}
+            placeholderTextColor={themeObject.colors.placeholder}
             value={formDescription}
             onChangeText={setFormDescription}
             multiline
             numberOfLines={4}
           />
 
+          {/* Поле: Цена */}
           <TextInput
             style={[styles.input, { 
-              backgroundColor: themeObject.colors.inputBackground,
-              color: themeObject.colors.text,
-              borderColor: themeObject.colors.border
+              backgroundColor: themeObject.colors.inputBackground, 
+              color: themeObject.colors.text, 
+              borderColor: themeObject.colors.border 
             }]}
-            placeholder={tLang('catalog.pricePlaceholder')}
-            placeholderTextColor={themeObject.colors.placeholder || "#888888"}
+            placeholder={tLang("catalog.pricePlaceholder")}
+            placeholderTextColor={themeObject.colors.placeholder}
             value={formPrice}
             onChangeText={setFormPrice}
             keyboardType="numeric"
           />
 
+          {/* Кнопка выбора изображения */}
           <TouchableOpacity
             style={[styles.imagePickerButton, { 
-              backgroundColor: themeObject.colors.inputBackground,
-              borderColor: themeObject.colors.border
+              backgroundColor: themeObject.colors.inputBackground, 
+              borderColor: themeObject.colors.border 
             }]}
-            onPress={handlePickImage}
+            onPress={handleImagePickerPress}
           >
             <Text style={[styles.imagePickerText, { color: themeObject.colors.primary }]}>
-              {formPicture ? tLang('catalog.changeImage') : tLang('catalog.selectImage')}
+              {formPicture ? tLang("catalog.changeImage") : tLang("catalog.selectImage")}
             </Text>
           </TouchableOpacity>
 
-          {formPicture ? (
+          {/* Превью выбранного изображения */}
+          {formPicture && (
             <View style={styles.imagePreviewContainer}>
-              <Image 
-                source={getImageSource()} 
-                style={styles.imagePreview}
-                resizeMode="cover"
-              />
-              <TouchableOpacity
-                style={styles.removeImageButton}
-                onPress={handleRemoveImage}
-              >
+              <Image source={getImageSource()} style={styles.imagePreview} resizeMode="cover" />
+              <TouchableOpacity style={styles.removeImageButton} onPress={handleRemoveImage}>
                 <Text style={styles.removeImageText}>✕</Text>
               </TouchableOpacity>
             </View>
-          ) : null}
+          )}
 
+          {/* Кнопки управления */}
           <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={onClose}
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.cancelButton]} 
+              onPress={handleClose}
             >
-              <Text style={styles.cancelButtonText}>
-                {tLang('common.cancel') || "Отмена"}
-              </Text>
+              <Text style={styles.cancelButtonText}>{tLang("common.cancel")}</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
-              style={[styles.modalButton, styles.saveButton]}
+              style={[styles.modalButton, styles.saveButton, { backgroundColor: themeObject.colors.primary }]}
               onPress={isEdit ? handleUpdateItem : handleAddItem}
             >
               <Text style={styles.saveButtonText}>
-                {isEdit ? tLang('common.save') : tLang('common.add')}
+                {isEdit ? tLang("common.save") : tLang("common.add")}
               </Text>
             </TouchableOpacity>
           </View>
+          
         </View>
       </View>
     </Modal>

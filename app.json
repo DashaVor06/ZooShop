@@ -30,6 +30,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Разрешите доступ к фото, чтобы выбирать изображения товаров.",
+          "cameraPermission": "Разрешите доступ к камере, чтобы фотографировать товары."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/splash-icon.png",

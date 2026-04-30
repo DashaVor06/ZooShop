@@ -38,7 +38,7 @@ export const LanguageProvider = ({ children }) => {
     }
   };
 
-  const tLang = (key) => i18n.t(key);
+  const tLang = (key, options) => i18n.t(key, options);
 
   const value = {
     locale,
@@ -53,4 +53,3 @@ export const LanguageProvider = ({ children }) => {
     </LanguageContext.Provider>
   );
 };
-
