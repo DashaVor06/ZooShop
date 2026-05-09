@@ -1,32 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import Fuse from 'fuse.js';
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
-  FlatList,
-  RefreshControl,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    FlatList,
+    RefreshControl,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import { styles } from "../../src/view/catalogStyles";
+import { styles } from "../../../src/view/catalogStyles";
 
-import { supabase } from '../../src/model/supabase';
-import { renderConfirmModal } from "../../src/view/confirmModal";
-import { renderItem } from "../../src/view/item";
-import { RenderModal } from "../../src/view/modal";
-import { SortModal } from "../../src/view/sortModal";
+import { supabase } from '../../../src/model/supabase';
+import { renderConfirmModal } from "../../../src/view/confirmModal";
+import { renderItem } from "../../../src/view/item";
+import { RenderModal } from "../../../src/view/modal";
+import { SortModal } from "../../../src/view/sortModal";
 
-import { initAnimalsTable } from '../../src/model/animalModel';
-import { useCatalogForm } from "../../src/viewModel/hooks/useCatalogForm";
-import { useLanguageSelector } from "../../src/viewModel/hooks/useLanguageSelector";
-import { useNetworkStatus } from "../../src/viewModel/hooks/useNetworkStatus";
-import { ThemeContext } from "../../src/viewModel/providers/themeProvider";
-import { imagekitService } from "../../src/viewModel/services/imagekitService";
-import { supabaseAnimalService } from "../../src/viewModel/services/supabaseAnimalService";
-import { supabaseService } from "../../src/viewModel/services/supabaseService";
+import { initAnimalsTable } from '../../../src/model/animalModel';
+import { useCatalogForm } from "../../../src/viewModel/hooks/useCatalogForm";
+import { useLanguageSelector } from "../../../src/viewModel/hooks/useLanguageSelector";
+import { useNetworkStatus } from "../../../src/viewModel/hooks/useNetworkStatus";
+import { ThemeContext } from "../../../src/viewModel/providers/themeProvider";
+import { imagekitService } from "../../../src/viewModel/services/imagekitService";
+import { supabaseAnimalService } from "../../../src/viewModel/services/supabaseAnimalService";
+import { supabaseService } from "../../../src/viewModel/services/supabaseService";
 
 const ADMIN_ID = '6f4d907f-b751-48da-b434-0ebb68792299';
 
@@ -35,6 +35,7 @@ export default function CatalogScreen() {
   const { themeObject } = useContext(ThemeContext);
   const { tLang } = useLanguageSelector();
   const navigation = useNavigation();
+  const router = useRouter(); 
   const { isConnected } = useNetworkStatus();
 
   // Состояние прав
@@ -64,6 +65,10 @@ export default function CatalogScreen() {
     formPrice, setFormPrice, formPicture, setFormPicture,
     formCategory, setFormCategory, resetForm,
   } = useCatalogForm();
+
+  const handleItemPress = (item) => {
+  router.push(`/catalog/${item.it_id}`);
+};
 
   // 1. ПРОВЕРКА ПРАВ
   useEffect(() => {
@@ -221,8 +226,11 @@ export default function CatalogScreen() {
       </View>
 
       <FlatList
+        key={2}
+        numColumns={2}
         data={sortedAndFilteredItems}
         contentContainerStyle={styles.listContainer}
+        columnWrapperStyle={{ justifyContent: 'space-between' }} 
         renderItem={({ item }) => renderItem({
           item, expandedId, themeObject, tLang, toggleExpand: (id) => setExpandedId(expandedId === id ? null : id), 
           openEditModal: (item) => {
@@ -235,7 +243,7 @@ export default function CatalogScreen() {
             setEditModalVisible(true);
           }, 
           confirmDelete: (id) => { setItemToDelete(id); setConfirmModalVisible(true); }, 
-          animalsList: animals, isAdmin 
+          animalsList: animals, isAdmin, onPress: handleItemPress
         })}
         keyExtractor={(item) => item.it_id.toString()}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeObject.colors.primary} />}

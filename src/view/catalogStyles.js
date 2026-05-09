@@ -18,30 +18,24 @@ export const styles = StyleSheet.create({
     paddingTop: 16,        // Отступ сверху
     paddingBottom: 32,     // Запас снизу для удобства скролла
   },
-  productCard: {
-    alignSelf: 'center',    // Центрируем карточку
-    width: '100%',         // Она будет занимать всю доступную ширину контейнера
-    maxWidth: 500,         // ОГРАНИЧЕНИЕ: карточка не станет шире 500 единиц (важно для планшетов)
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  imageContainer: {
-    width: "100%",
-    height: 200,
-    backgroundColor: "transparent",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 12,
-  },
+productCard: {
+  width: '48%', // Немного меньше 50%, чтобы осталось место для отступа между ними
+  borderRadius: 12,
+  marginBottom: 16,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+  elevation: 3,
+  overflow: "hidden",
+},
+imageContainer: {
+  width: "100%",
+  height: 120, // Уменьшите высоту картинки, так как карточек стало две
+  backgroundColor: "transparent",
+  justifyContent: "center",
+  alignItems: "center",
+},
   productImage: {
     width: "100%",
     height: "100%",
