@@ -4,6 +4,7 @@ import { useContext } from "react";
 import { StatusBar } from "react-native";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { migrateDbIfNeeded } from "../src/model/localdbInit";
+import { CartProvider } from "../src/viewModel/providers/cartProvider";
 import { LanguageProvider } from "../src/viewModel/providers/languageProvider";
 import { ThemeContext, ThemeProvider } from "../src/viewModel/providers/themeProvider";
 
@@ -29,11 +30,13 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SQLiteProvider databaseName="catalog.db" onInit={migrateDbIfNeeded}>
-        <LanguageProvider>
-          <ThemeProvider>
-            <RootContent />
-          </ThemeProvider>
-        </LanguageProvider>
+        <CartProvider>
+          <LanguageProvider>
+            <ThemeProvider>
+              <RootContent />
+            </ThemeProvider>
+          </LanguageProvider>
+        </CartProvider>     
       </SQLiteProvider>
     </SafeAreaProvider>    
   );

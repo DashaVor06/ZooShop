@@ -5,7 +5,7 @@ export const insertItem = async (db, item) => {
     await updateItemById(db, item);
   } else {
     await db.runAsync(
-      'INSERT INTO items (it_id, it_name, it_description, it_price, it_image_url, it_image_file_id, it_synced, it_deleted, it_an_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO items (it_id, it_name, it_description, it_price, it_image_url, it_image_file_id, it_synced, it_deleted, it_an_id, it_br_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       item.it_id,
       item.it_name,
       item.it_description,
@@ -14,14 +14,15 @@ export const insertItem = async (db, item) => {
       item.it_image_file_id,
       item.it_synced ? 1 : 0,
       item.it_deleted ? 1 : 0,
-      item.it_an_id
+      item.it_an_id,
+      item.it_br_id
     );
   }
 };
 
 export const updateItemById = async (db, item) => {
   await db.runAsync(
-    'UPDATE items SET it_name = ?, it_description = ?, it_price = ?, it_image_url = ?, it_image_file_id = ?, it_synced = ?, it_deleted = ?, it_an_id = ? WHERE it_id = ?',
+    'UPDATE items SET it_name = ?, it_description = ?, it_price = ?, it_image_url = ?, it_image_file_id = ?, it_synced = ?, it_deleted = ?, it_an_id = ?, it_br_id = ? WHERE it_id = ?',
     item.it_name,
     item.it_description,
     item.it_price,
@@ -30,6 +31,7 @@ export const updateItemById = async (db, item) => {
     item.it_synced ? 1 : 0,
     item.it_deleted ? 1 : 0,
     item.it_an_id,
+    item.it_br_id,
     item.it_id
   );
 };

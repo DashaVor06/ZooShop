@@ -4,18 +4,17 @@ import { useSQLiteContext } from "expo-sqlite";
 import Fuse from 'fuse.js';
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
-    FlatList,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { styles } from "../../../src/view/catalogStyles";
 
-import { supabase } from '../../../src/model/supabase';
 import { renderConfirmModal } from "../../../src/view/confirmModal";
-import { renderItem } from "../../../src/view/item";
+import { RenderItem } from "../../../src/view/item";
 import { RenderModal } from "../../../src/view/modal";
 import { SortModal } from "../../../src/view/sortModal";
 
@@ -23,12 +22,14 @@ import { initAnimalsTable } from '../../../src/model/animalModel';
 import { useCatalogForm } from "../../../src/viewModel/hooks/useCatalogForm";
 import { useLanguageSelector } from "../../../src/viewModel/hooks/useLanguageSelector";
 import { useNetworkStatus } from "../../../src/viewModel/hooks/useNetworkStatus";
+import { useUserRole } from "../../../src/viewModel/hooks/useUserRole";
 import { ThemeContext } from "../../../src/viewModel/providers/themeProvider";
 import { imagekitService } from "../../../src/viewModel/services/imagekitService";
 import { supabaseAnimalService } from "../../../src/viewModel/services/supabaseAnimalService";
+import { supabaseBrandService } from "../../../src/viewModel/services/supabaseBrandService";
 import { supabaseService } from "../../../src/viewModel/services/supabaseService";
 
-const ADMIN_ID = '6f4d907f-b751-48da-b434-0ebb68792299';
+import { useCart } from "../../../src/viewModel/providers/cartProvider";
 
 export default function CatalogScreen() {
   const db = useSQLiteContext();
@@ -38,8 +39,12 @@ export default function CatalogScreen() {
   const router = useRouter(); 
   const { isConnected } = useNetworkStatus();
 
+  const { cart } = useCart();
+  
   // Состояние прав
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { userProfile } = useUserRole();
+  const isAdmin = userProfile?.acc_r_id === 1;
+  const userId = userProfile?.acc_id;
 
   const {
     items, loading, refreshing, pendingSync, loadItems, onRefresh,
@@ -47,7 +52,12 @@ export default function CatalogScreen() {
   } = supabaseService(db);
 
   const { loadImage } = imagekitService();
-  const { animals } = supabaseAnimalService(db);
+  const { animals, addAnimal } = supabaseAnimalService(db);
+  const { brands, addBrand } = supabaseBrandService(db); 
+
+  const [selectedFilterId, setSelectedFilterId] = useState(null);
+  const [filterType, setFilterType] = useState('animals'); 
+  const [isListVisible, setIsListVisible] = useState(false);
 
   const [expandedId, setExpandedId] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -63,26 +73,12 @@ export default function CatalogScreen() {
   const {
     formName, setFormName, formDescription, setFormDescription,
     formPrice, setFormPrice, formPicture, setFormPicture,
-    formCategory, setFormCategory, resetForm,
+    formCategory, setFormCategory, resetForm, formBrand, setFormBrand
   } = useCatalogForm();
 
   const handleItemPress = (item) => {
-  router.push(`/catalog/${item.it_id}`);
-};
-
-  // 1. ПРОВЕРКА ПРАВ
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAdmin(session?.user?.id === ADMIN_ID);
-    };
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAdmin(session?.user?.id === ADMIN_ID);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    router.push(`/catalog/${item.it_id}`);
+  };
 
   // 2. ИНИЦИАЛИЗАЦИЯ
   useEffect(() => {
@@ -93,12 +89,30 @@ export default function CatalogScreen() {
     init();
   }, []);
 
-  // 3. КНОПКА В ХЕДЕРЕ
+  // 3. КНОПКА В ХЕДЕРЕ (Исправленная версия)
   useEffect(() => {
-    navigation.setOptions({
+    // Определяем целевой объект навигации (текущий экран или его родитель-стек)
+    const targetNav = navigation.getParent()?.setOptions ? navigation.getParent() : navigation;
+
+    targetNav.setOptions({
       headerRight: () => isAdmin ? (
-        <TouchableOpacity onPress={() => { resetForm(); setModalVisible(true); }} style={{ marginRight: 16 }}>
-          <Ionicons name="add" size={24} color={themeObject.colors.primary || "#007AFF"} />
+        <TouchableOpacity 
+          onPress={() => { 
+            resetForm(); 
+            setModalVisible(true); 
+          }} 
+          style={{ 
+            marginRight: 15, 
+            padding: 5,
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          <Ionicons 
+            name="add" 
+            size={30} 
+            color={themeObject.colors.primary || "#007AFF"} 
+          />
         </TouchableOpacity>
       ) : null,
     });
@@ -111,17 +125,23 @@ export default function CatalogScreen() {
     setTimeout(() => setNotification({ visible: false, message: "", type: "" }), 3000);
   };
 
-  const handleAddItem = async () => {
+  const handleAddItem = async (finalCatId, finalBrId) => {
     try {
       const uri = typeof formPicture === "string" ? formPicture : formPicture?.uri;
+      
+      const catId = finalCatId !== undefined ? finalCatId : formCategory;
+      const brId = finalBrId !== undefined ? finalBrId : formBrand;
+
       await addItem({
         it_name: formName,
         it_description: formDescription,
         it_price: formPrice ? parseFloat(formPrice) : null,
         it_image_url: uri || null,
         it_image_file_id: null,
-        it_an_id: formCategory,
+        it_an_id: catId,
+        it_br_id: brId,
       });
+
       resetForm();
       setModalVisible(false);
       showNotification(tLang("catalog.addSuccess"));
@@ -131,10 +151,14 @@ export default function CatalogScreen() {
     }
   };
 
-  const handleUpdateItem = async () => {
+  const handleUpdateItem = async (finalCatId, finalBrId) => {
     if (!currentItem) return;
     try {
       const uri = typeof formPicture === "string" ? formPicture : formPicture?.url || formPicture?.uri;
+      
+      const catId = finalCatId !== undefined ? finalCatId : formCategory;
+      const brId = finalBrId !== undefined ? finalBrId : formBrand;
+
       await updateItem({
         it_id: currentItem.it_id,
         it_name: formName,
@@ -142,8 +166,10 @@ export default function CatalogScreen() {
         it_price: formPrice ? parseFloat(formPrice) : null,
         it_image_url: uri || null,
         it_image_file_id: (uri === currentItem.it_image_url) ? currentItem.it_image_file_id : null,
-        it_an_id: formCategory,
+        it_an_id: catId,
+        it_br_id: brId,
       });
+
       resetForm();
       setEditModalVisible(false);
       setCurrentItem(null);
@@ -185,15 +211,25 @@ export default function CatalogScreen() {
   }, [searchQuery, itemsWithCategory]);
 
   const sortedAndFilteredItems = useMemo(() => {
-    const sorted = [...searchedItems];
-    switch (sortOption) {
-      case 'name_asc': sorted.sort((a, b) => (a.it_name || '').localeCompare(b.it_name || '')); break;
-      case 'name_desc': sorted.sort((a, b) => (b.it_name || '').localeCompare(a.it_name || '')); break;
-      case 'price_asc': sorted.sort((a, b) => (a.it_price || 0) - (b.it_price || 0)); break;
-      case 'price_desc': sorted.sort((a, b) => (b.it_price || 0) - (a.it_price || 0)); break;
+    let filtered = [...searchedItems];
+
+    if (selectedFilterId !== null) {
+      if (filterType === 'animals') {
+        filtered = filtered.filter(item => item.it_an_id === selectedFilterId);
+      } else {
+        filtered = filtered.filter(item => item.it_br_id === selectedFilterId);
+      }
     }
-    return sorted;
-  }, [searchedItems, sortOption]);
+
+    // Затем сортировка
+    switch (sortOption) {
+      case 'name_asc': filtered.sort((a, b) => (a.it_name || '').localeCompare(b.it_name || '')); break;
+      case 'name_desc': filtered.sort((a, b) => (b.it_name || '').localeCompare(a.it_name || '')); break;
+      case 'price_asc': filtered.sort((a, b) => (a.it_price || 0) - (b.it_price || 0)); break;
+      case 'price_desc': filtered.sort((a, b) => (b.it_price || 0) - (a.it_price || 0)); break;
+    }
+    return filtered;
+  }, [searchedItems, sortOption, selectedFilterId, filterType]);
 
   return (
     <View style={[styles.container, { backgroundColor: themeObject.colors.background }]}>
@@ -224,27 +260,94 @@ export default function CatalogScreen() {
           <Ionicons name="swap-vertical" size={20} color={themeObject.colors.primary} />
         </TouchableOpacity>
       </View>
-
       <FlatList
-        key={2}
         numColumns={2}
         data={sortedAndFilteredItems}
+        ListHeaderComponent={
+          <View style={{ marginBottom: 15 }}>
+            {/* Радиокнопки выбора типа */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginVertical: 10 }}>
+              {['animals', 'brands'].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  onPress={() => { setFilterType(type); setSelectedFilterId(null); }}
+                  style={{ marginHorizontal: 15, alignItems: 'center' }}
+                >
+                  <Text style={{ 
+                    fontWeight: filterType === type ? 'bold' : 'normal',
+                    color: filterType === type ? themeObject.colors.primary : themeObject.colors.text 
+                  }}>
+                    {type === 'animals' ? 'Животные' : 'Бренды'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {/* Список категорий/брендов (статичный) */}
+            <FlatList
+              data={[
+                { id: null, name: "Все" },
+                ...(filterType === 'animals' 
+                    ? [...animals].sort((a, b) => a.an_name.localeCompare(b.an_name)).map(a => ({ id: a.an_id, name: a.an_name }))
+                    : [...brands].sort((a, b) => a.br_name.localeCompare(b.br_name)).map(b => ({ id: b.br_id, name: b.br_name }))
+                )
+              ]}
+              keyExtractor={(item) => String(item.id || 'all')}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={{ 
+                    paddingVertical: 12, 
+                    paddingHorizontal: 20,
+                    backgroundColor: selectedFilterId === item.id ? themeObject.colors.primary + '20' : 'transparent',
+                    borderBottomWidth: 0.5,
+                    borderColor: themeObject.colors.border
+                  }}
+                  onPress={() => setSelectedFilterId(item.id)}
+                >
+                  <Text style={{ color: themeObject.colors.text }}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        }
+        extraData={cart}
         contentContainerStyle={styles.listContainer}
         columnWrapperStyle={{ justifyContent: 'space-between' }} 
-        renderItem={({ item }) => renderItem({
-          item, expandedId, themeObject, tLang, toggleExpand: (id) => setExpandedId(expandedId === id ? null : id), 
-          openEditModal: (item) => {
-            setCurrentItem(item);
-            setFormName(item.it_name);
-            setFormDescription(item.it_description);
-            setFormPrice(item.it_price ? item.it_price.toString() : "");
-            setFormPicture(item.it_image_url ? { url: item.it_image_url, fileId: item.it_image_file_id } : null);
-            setFormCategory(item.it_an_id);
-            setEditModalVisible(true);
-          }, 
-          confirmDelete: (id) => { setItemToDelete(id); setConfirmModalVisible(true); }, 
-          animalsList: animals, isAdmin, onPress: handleItemPress
-        })}
+        renderItem={({ item }) => (
+          <RenderItem
+            item={item}
+            expandedId={expandedId}
+            themeObject={themeObject}
+            tLang={tLang}
+            toggleExpand={(id) =>
+              setExpandedId(expandedId === id ? null : id)
+            }
+            openEditModal={(item) => {
+              setCurrentItem(item);
+              setFormName(item.it_name);
+              setFormDescription(item.it_description);
+              setFormPrice(item.it_price ? item.it_price.toString() : "");
+              setFormPicture(
+                item.it_image_url
+                  ? {
+                      url: item.it_image_url,
+                      fileId: item.it_image_file_id,
+                    }
+                  : null
+              );
+              setFormCategory(item.it_an_id);
+              setEditModalVisible(true);
+            }}
+            confirmDelete={(id) => {
+              setItemToDelete(id);
+              setConfirmModalVisible(true);
+            }}
+            animalsList={animals}
+            brandsList={brands}
+            isAdmin={isAdmin}
+            onPress={handleItemPress}
+            userId={userId}
+          />
+        )}
         keyExtractor={(item) => item.it_id.toString()}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeObject.colors.primary} />}
       />
@@ -262,10 +365,15 @@ export default function CatalogScreen() {
             formPrice={formPrice} setFormPrice={setFormPrice}
             formCategory={formCategory} setFormCategory={setFormCategory}
             formPicture={formPicture} setFormPicture={setFormPicture}
+            addAnimal={addAnimal}
+            addBrand={addBrand}
             handleAddItem={handleAddItem}
             animalsList={animals}
             loadImage={loadImage}
             resetForm={resetForm}
+            brandsList={brands}       // Передаем список брендов из сервиса
+            formBrand={formBrand}     // Нужен новый хук useCatalogForm (см. ниже)
+            setFormBrand={setFormBrand}
           />
           <RenderModal
             isEdit={true}
@@ -279,10 +387,15 @@ export default function CatalogScreen() {
             formCategory={formCategory} setFormCategory={setFormCategory}
             formPicture={formPicture} setFormPicture={setFormPicture}
             handleUpdateItem={handleUpdateItem}
+            addAnimal={addAnimal}
+            addBrand={addBrand}
             animalsList={animals}
             loadImage={loadImage}
             currentItem={currentItem}
             resetForm={resetForm}
+            brandsList={brands}       // Передаем список брендов из сервиса
+            formBrand={formBrand}     // Нужен новый хук useCatalogForm (см. ниже)
+            setFormBrand={setFormBrand}
           />
           {renderConfirmModal({ 
             confirmModalVisible, 

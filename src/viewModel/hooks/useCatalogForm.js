@@ -6,6 +6,7 @@ export const useCatalogForm = () => {
   const [formPrice, setFormPrice] = useState('');
   const [formCategory, setFormCategory] = useState(null);
   const [formPicture, setFormPicture] = useState(null);
+  const [formBrand, setFormBrand] = useState(null);
 
   const resetForm = () => {
     setFormName('');
@@ -13,6 +14,7 @@ export const useCatalogForm = () => {
     setFormPrice('');
     setFormCategory(null);
     setFormPicture(null);
+    setFormBrand(null);
   };
 
   return {
@@ -27,5 +29,7 @@ export const useCatalogForm = () => {
     formPicture,
     setFormPicture,
     resetForm,
+    formBrand, 
+    setFormBrand
   };
 };

@@ -1,96 +1,90 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, Share, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Share, Text, TouchableOpacity, View } from "react-native";
+import { useCart } from "../viewModel/providers/cartProvider";
 import { styles } from "./catalogStyles";
 
-export const renderItem = ({
-  item,
-  themeObject,
-  tLang,
-  openEditModal,
-  confirmDelete,
-  animalsList = [],
-  isAdmin,
-  onPress, // Добавили onPress
-}) => {
+export const RenderItem = (props) => {
+  const { 
+    item, themeObject, tLang, openEditModal, confirmDelete, 
+    animalsList, brandsList, isAdmin, onPress, userId 
+  } = props;
     
-  const handleAddToCart = () => {
-    // Здесь будет ваша логика добавления в корзину
-    // Например: basketStore.add(item);
-    console.log("Добавлено в корзину:", item.it_name);
-  };
-    const handleShare = async () => {
-      try {
-        const animalName = getAnimalName(item.it_an_id, animalsList);
-        const price = item.it_price ? `${formatPrice(item.it_price)} Br` : '';
-        const message = `${animalName} - ${item.it_name || ''}\n\n${item.it_description || ''}\n\n${tLang('catalog.price') || 'Цена'}: ${price}`;
-        await Share.share({ message, title: item.it_name || 'Item' });
-      } catch (error) { console.error(error); }
-    };
+  const { cart, updateCartItem } = useCart();
   
-    const formatPrice = (price) => {
-      if (!price) return "";
-      return Number(price).toFixed(2).replace('.', ',');
-    };
+  const cartItem = cart?.find(c => Number(c.ai_it_id) === Number(item.it_id));
 
-    const getAnimalName = (animalId, list) => {
-      if (!animalId) return 'Без категории';
-      const animal = list.find(a => (a.an_id === animalId || a.id === animalId));
-      return animal ? String(animal.an_name) : 'Без категории';
-    };
+  const handleUpdateCart = async (amount) => {
+    if (!userId) { Alert.alert("Ошибка", "Авторизуйтесь"); return; }
+    await updateCartItem(item.it_id, amount);
+  };
 
-    return (
-      <View style={[styles.productCard, { backgroundColor: themeObject.colors.card || "#ffffff" }]}>
-        {/* При нажатии на карточку вызываем переданный onPress */}
-        <TouchableOpacity activeOpacity={0.7} onPress={() => onPress && onPress(item)}>
-          {item.it_image_url ? (
-            <View style={styles.imageContainer}>
-              <Image source={{ uri: item.it_image_url }} style={styles.productImage} resizeMode="contain" />
-            </View>
-          ) : null}
-          
-          <View style={styles.cardContent}>
-            <Text style={[styles.itemCategory, { color: themeObject.colors.primary, fontWeight: '700', fontSize: 11, marginBottom: 2 }]}>
-              {String(getAnimalName(item.it_an_id, animalsList)).toUpperCase()}
-            </Text>
-            
-            <Text style={[styles.productName, { color: themeObject.colors.text, fontSize: 14 }]} numberOfLines={2}>
-              {String(item.it_name || 'Без названия')}
-            </Text>
-            
-            {/* Описание удалено */}
-            
-            {item.it_price ? (
-              <View style={styles.priceContainer}>
-                <Text style={[styles.priceLabel, { color: themeObject.colors.secondaryText || "#999999", fontSize: 12 }]}>
-                  {String(tLang('catalog.price') || "Цена:")}
-                </Text>
-                <Text style={[styles.priceValue, { color: themeObject.colors.primary || "#2ecc71", fontSize: 14 }]}>
-                  {formatPrice(item.it_price)} Br
-                </Text>
-              </View>
-            ) : null}
+  const handleShare = async () => {
+    try {
+      const categoryName = animalsList.find(a => a.an_id === item.it_an_id)?.an_name || '---';
+      const price = item.it_price ? `${Number(item.it_price).toFixed(2)} Br` : '';
+      const message = `${categoryName} - ${item.it_name}\n\n${item.it_description}\n\nЦена: ${price}`;
+      await Share.share({ message, title: item.it_name });
+    } catch (error) { 
+      console.error(error); 
+    }
+  };
+
+  return (
+    <View style={[styles.productCard, { backgroundColor: themeObject.colors.card }]}>
+      <TouchableOpacity activeOpacity={0.7} onPress={() => onPress && onPress(item)}>
+        {item.it_image_url && (
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: item.it_image_url }} style={styles.productImage} resizeMode="contain" />
           </View>
-        </TouchableOpacity>
-
-        <View style={styles.actionButtons}>
-          {/* Кнопка Корзины */}
-          <TouchableOpacity style={styles.actionButton} onPress={handleAddToCart}>
-            <Ionicons name="cart-outline" size={22} color={themeObject.colors.primary || "#2196F3"} />
-          </TouchableOpacity>
-
-          {isAdmin ? (
-            <>
-              <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)}>
-                <Ionicons name="pencil" size={22} color="#4CAF50" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.actionButton} onPress={() => confirmDelete(item.it_id)}>
-                <Ionicons name="trash" size={22} color="#f44336" />
-              </TouchableOpacity>
-            </>
-          ) : null}
+        )}
+        
+        <View style={styles.cardContent}>
+          <Text style={{ color: themeObject.colors.primary, fontWeight: '700', fontSize: 11 }}>
+             {animalsList.find(a => a.an_id === item.it_an_id)?.an_name?.toUpperCase() || 
+              brandsList?.find(b => b.br_id === item.it_br_id)?.br_name?.toUpperCase() || '---'}
+          </Text>
+          <Text style={{ color: themeObject.colors.text, fontSize: 14 }} numberOfLines={2}>{item.it_name}</Text>
+          <Text style={{ color: themeObject.colors.primary, fontSize: 14 }}>{Number(item.it_price).toFixed(2)} Br</Text>
         </View>
+      </TouchableOpacity>
+
+      <View style={styles.actionButtons}>
+        {isAdmin ? (
+          // Интерфейс для АДМИНА
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+            <TouchableOpacity onPress={() => openEditModal(item)}>
+                <Ionicons name="pencil" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => confirmDelete(item.it_id)}>
+                <Ionicons name="trash" size={24} color="#f44336" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Интерфейс для ПОЛЬЗОВАТЕЛЯ
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <TouchableOpacity onPress={handleShare}>
+              <Ionicons name="share-social-outline" size={24} color={themeObject.colors.text} />
+            </TouchableOpacity>
+            
+            {cartItem ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: themeObject.colors.border, borderRadius: 15, paddingHorizontal: 5 }}>
+                <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount - 1)}>
+                  <Ionicons name="remove" size={20} color={themeObject.colors.text} />
+                </TouchableOpacity>
+                <Text style={{ marginHorizontal: 8, color: themeObject.colors.text, fontWeight: 'bold' }}>{cartItem.ai_amount}</Text>
+                <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount + 1)}>
+                  <Ionicons name="add" size={20} color={themeObject.colors.text} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => handleUpdateCart(1)}>
+                <Ionicons name="cart-outline" size={24} color={themeObject.colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
-    );
+    </View>
+  );
 };

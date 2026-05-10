@@ -34,6 +34,12 @@ const i18n = new I18n({
       notificationDesc: 'A reminder will arrive every day at %{time}.',
       notifPermissionError: 'Permission to notifications denied',
     },
+    basket: {
+      total: 'Total',
+      checkout: 'Checkout',
+      empty: 'Your basket is empty',
+      remove: 'Remove',
+    },
     catalog: {
       price: 'Price',
       readMore: 'Read more',
@@ -135,6 +141,12 @@ const i18n = new I18n({
       reminderTime: 'Время напоминания:',
       notificationDesc: 'Будет приходить напоминание каждый день в %{time}.',
       notifPermissionError: 'Доступ к уведомлениям запрещен',
+    },
+    basket: {
+      total: 'Итого',
+      checkout: 'Перейти к оформлению',
+      empty: 'Ваша корзина пуста',
+      remove: 'Удалить'
     },
     catalog: {
       price: 'Цена',

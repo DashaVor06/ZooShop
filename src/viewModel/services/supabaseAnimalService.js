@@ -1,9 +1,9 @@
 // src/viewModel/services/supabaseAnimalService.js
 import { useCallback, useEffect, useState } from "react";
 import {
-    clearAnimals,
-    getAnimals,
-    insertAnimal
+  clearAnimals,
+  getAnimals,
+  insertAnimal
 } from "../../model/animalModel";
 import { supabase } from "../../model/supabase";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
@@ -11,7 +11,6 @@ import { useNetworkStatus } from "../hooks/useNetworkStatus";
 export const supabaseAnimalService = (db) => {
   const [animals, setAnimals] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const { isConnected } = useNetworkStatus();
 
   const loadAnimals = useCallback(async () => {
@@ -41,11 +40,40 @@ export const supabaseAnimalService = (db) => {
     }
   }, [db, isConnected]);
 
+  const addAnimal = useCallback(async (animalData) => {
+    try {
+      if (!isConnected) throw new Error("network.error_offline");
+
+      // 1. Отправляем в Supabase
+      const { data, error } = await supabase
+        .from("animals")
+        .insert({ an_name: animalData.an_name })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // 2. Сохраняем в локальную SQLite
+      await insertAnimal(db, {
+        an_id: data.an_id,
+        an_name: data.an_name,
+      });
+
+      // 3. Обновляем локальный стейт, чтобы UI перерендерился
+      setAnimals((prev) => [...prev, data]);
+
+      return data; // Возвращаем созданный объект (там будет новый an_id)
+    } catch (e) {
+      console.error("Add animal error:", e);
+      throw e;
+    }
+  }, [db, isConnected]);
+
   useEffect(() => {
     loadAnimals().then(() => {
       if (isConnected) pullAnimalsFromServer();
     });
   }, [loadAnimals, isConnected, pullAnimalsFromServer]);
 
-  return { animals, loading, loadAnimals, pullAnimalsFromServer };
+  return { animals, loading, loadAnimals, pullAnimalsFromServer, addAnimal };
 };

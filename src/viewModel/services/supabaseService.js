@@ -98,7 +98,8 @@ export const supabaseService = (db) => {
           it_price: item.it_price,
           it_image_url: imageUrl,
           it_image_file_id: fileId,
-          it_an_id: item.it_an_id
+          it_an_id: item.it_an_id,
+          it_br_id: item.it_br_id
         };
 
         if (item.it_id.toString().startsWith("local_")) {

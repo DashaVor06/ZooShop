@@ -33,27 +33,70 @@ export const RenderModal = (props) => {
     setEditModalVisible,
     handleAddItem,
     handleUpdateItem,
+    addAnimal,
+    addBrand,
     loadImage,
     showNotification,
     currentItem,
     animalsList = [],
+    brandsList = [],
+    formBrand,
+    setFormBrand,
   } = props;
 
   const [categoryItems, setCategoryItems] = useState([]);
-
+  const [brandItems, setBrandItems] = useState([]);
+  const [isManualCategory, setIsManualCategory] = useState(false);
+  const [isManualBrand, setIsManualBrand] = useState(false);
   const isVisible = isEdit ? editModalVisible : modalVisible;
 
   useEffect(() => {
-    if (isVisible && animalsList?.length > 0) {
-      const formatted = animalsList.map((animal) => ({
-        label: animal.an_name || "---",
-        value: animal.an_id,
-      }));
-      setCategoryItems(formatted);
+    if (isVisible) {
+      if (animalsList?.length > 0) {
+        setCategoryItems(animalsList.map(a => ({ label: a.an_name, value: a.an_id })));
+      }
+      if (brandsList?.length > 0) { // Подготовка списка брендов
+        setBrandItems(brandsList.map(b => ({ label: b.br_name, value: b.br_id })));
+      }
     }
-  }, [animalsList, isVisible]);
+  }, [animalsList, brandsList, isVisible]);
 
   if (!isVisible) return null;
+
+  // Функция-посредник для обработки ручного ввода перед основным сохранением
+  const handleSaveWithManualCheck = async () => {
+    let finalCategoryId = formCategory;
+    let finalBrandId = formBrand;
+
+    try {
+      // 1. Если включен ручной ввод категории и введено имя
+      if (isManualCategory && typeof formCategory === 'string' && formCategory.trim() !== '') {
+        // Вызываем сервис добавления (должен вернуть ID новой записи или объект с ID)
+        const newAnimal = await props.addAnimal({ an_name: formCategory.trim() });
+        finalCategoryId = newAnimal.an_id;
+      }
+
+      // 2. Если включен ручной ввод бренда
+      if (isManualBrand && typeof formBrand === 'string' && formBrand.trim() !== '') {
+        const newBrand = await props.addBrand({ br_name: formBrand.trim() });
+        finalBrandId = newBrand.br_id;
+      }
+
+      // 3. Вызываем основное сохранение с полученными ID
+      if (isEdit) {
+        await handleUpdateItem(finalCategoryId, finalBrandId);
+      } else {
+        await handleAddItem(finalCategoryId, finalBrandId);
+      }
+      
+      // Сбрасываем флаги ручного ввода после успеха
+      setIsManualCategory(false);
+      setIsManualBrand(false);
+    } catch (error) {
+      console.error("Ошибка при создании новых категорий:", error);
+      if (showNotification) showNotification(tLang("catalog.saveError"), "error");
+    }
+  };
 
   const onPickImage = async (sourceType) => {
     try {
@@ -146,8 +189,26 @@ export const RenderModal = (props) => {
               selectedValue={formCategory}
               onValueChange={setFormCategory}
               items={categoryItems}
-              placeholder={tLang("catalog.selectCategory")}
+              placeholder="Выберите категорию"
               themeObject={themeObject}
+              isManual={isManualCategory}
+              setIsManual={setIsManualCategory}
+            />
+          ) : (
+            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+              {tLang("catalog.noCategoriesAvailable")}
+            </Text>
+          )}
+
+          {brandItems.length > 0 ? (
+            <SimplePicker
+              selectedValue={formBrand} // Добавьте formBrand в пропсы модалки
+              onValueChange={setFormBrand}
+              items={brandItems}
+              placeholder="Выберите бренд"
+              themeObject={themeObject}
+              isManual={isManualBrand}
+              setIsManual={setIsManualBrand}
             />
           ) : (
             <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
@@ -218,7 +279,7 @@ export const RenderModal = (props) => {
 
             <TouchableOpacity
               style={[styles.modalButton, styles.saveButton, { backgroundColor: themeObject.colors.primary }]}
-              onPress={isEdit ? handleUpdateItem : handleAddItem}
+              onPress={handleSaveWithManualCheck}
             >
               <Text style={styles.saveButtonText}>
                 {isEdit ? tLang("common.save") : tLang("common.add")}
