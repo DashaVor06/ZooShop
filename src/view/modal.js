@@ -68,6 +68,24 @@ export const RenderModal = (props) => {
     let finalCategoryId = formCategory;
     let finalBrandId = formBrand;
 
+    // Валидация обязательных полей
+    if (!formName?.trim()) {
+      Alert.alert(tLang("common.error") || "Ошибка", tLang("catalog.error_name_required") || "Введите название товара");
+      return;
+    }
+    if (!formCategory) {
+      Alert.alert(tLang("common.error") || "Ошибка", tLang("catalog.error_category_required") || "Выберите категорию");
+      return;
+    }
+    if (!formBrand) {
+      Alert.alert(tLang("common.error") || "Ошибка", tLang("catalog.error_brand_required") || "Выберите бренд");
+      return;
+    }
+    if (!formPrice || parseFloat(formPrice) <= 0) {
+      Alert.alert(tLang("common.error") || "Ошибка", tLang("catalog.error_price_required") || "Введите корректную цену");
+      return;
+    }
+
     try {
       // 1. Если включен ручной ввод категории и введено имя
       if (isManualCategory && typeof formCategory === 'string' && formCategory.trim() !== '') {
@@ -188,11 +206,11 @@ export const RenderModal = (props) => {
             <SimplePicker
               selectedValue={formCategory}
               onValueChange={setFormCategory}
-              items={categoryItems}
-              placeholder="Выберите категорию"
+              placeholder={tLang("catalog.categoryPlaceholder")}
               themeObject={themeObject}
               isManual={isManualCategory}
               setIsManual={setIsManualCategory}
+              items={categoryItems}
             />
           ) : (
             <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
@@ -204,11 +222,11 @@ export const RenderModal = (props) => {
             <SimplePicker
               selectedValue={formBrand} // Добавьте formBrand в пропсы модалки
               onValueChange={setFormBrand}
-              items={brandItems}
-              placeholder="Выберите бренд"
+              placeholder={tLang("catalog.brandPlaceholder")}
               themeObject={themeObject}
               isManual={isManualBrand}
               setIsManual={setIsManualBrand}
+              items={brandItems}
             />
           ) : (
             <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>

@@ -335,6 +335,7 @@ export default function CatalogScreen() {
                   : null
               );
               setFormCategory(item.it_an_id);
+              setFormBrand(item.it_br_id);
               setEditModalVisible(true);
             }}
             confirmDelete={(id) => {

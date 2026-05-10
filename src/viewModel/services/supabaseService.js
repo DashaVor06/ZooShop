@@ -64,6 +64,10 @@ export const supabaseService = (db) => {
   // --- SYNC (PUSH + PULL) ---
   const syncWithServer = useCallback(async () => {
     if (!isConnected || syncLock.current) return;
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log("Current Sync User Session:", session?.user?.id || "No session");
+
     syncLock.current = true;
     setPendingSync(true);
 
@@ -83,36 +87,54 @@ export const supabaseService = (db) => {
       const toSync = localItems.filter(i => Number(i.it_synced) === 0 && Number(i.it_deleted) !== 1);
 
       for (const item of toSync) {
-        let imageUrl = item.it_image_url;
-        let fileId = item.it_image_file_id;
+        try {
+          let imageUrl = item.it_image_url;
+          let fileId = item.it_image_file_id;
 
-        if (imageUrl?.startsWith("file://")) {
-          const uploaded = await uploadToImageKit(imageUrl);
-          imageUrl = uploaded.url;
-          fileId = uploaded.fileId;
-        }
-
-        const payload = {
-          it_name: item.it_name,
-          it_description: item.it_description,
-          it_price: item.it_price,
-          it_image_url: imageUrl,
-          it_image_file_id: fileId,
-          it_an_id: item.it_an_id,
-          it_br_id: item.it_br_id
-        };
-
-        if (item.it_id.toString().startsWith("local_")) {
-          const { data, error } = await supabase.from("items").insert([payload]).select();
-          if (!error && data?.[0]) {
-            await deleteItemById(db, item.it_id);
-            await insertItem(db, { ...item, it_id: data[0].it_id, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
+          if (imageUrl?.startsWith("file://")) {
+            const uploaded = await uploadToImageKit(imageUrl);
+            imageUrl = uploaded.url;
+            fileId = uploaded.fileId;
           }
-        } else {
-          const { error } = await supabase.from("items").update(payload).eq("it_id", item.it_id);
-          if (!error) {
+
+          const payload = {
+            it_name: item.it_name,
+            it_description: item.it_description,
+            it_price: item.it_price,
+            it_image_url: imageUrl,
+            it_image_file_id: fileId,
+            it_an_id: item.it_an_id,
+            it_br_id: item.it_br_id
+          };
+
+          if (item.it_id.toString().startsWith("local_")) {
+            console.log("Attempting insert for admin:", item.it_name);
+            const { data, error, status } = await supabase.from("items").insert([payload]).select();
+            
+            if (error) {
+              console.error("Supabase Sync Detail:", {
+                message: error.message,
+                code: error.code,
+                status: status,
+                hint: error.hint
+              });
+              throw error;
+            }
+            
+            if (data?.[0]) {
+              await deleteItemById(db, item.it_id);
+              await insertItem(db, { ...item, it_id: data[0].it_id, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
+              console.log("Successfully synced & replaced local ID:", data[0].it_id);
+            } else {
+              console.warn("Item might be inserted but not readable (RLS). Status:", status);
+            }
+          } else {
+            const { error } = await supabase.from("items").update(payload).eq("it_id", item.it_id);
+            if (error) throw error;
             await updateItemById(db, { ...item, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
           }
+        } catch (itemError) {
+          console.error(`Failed to sync item ${item.it_id}:`, itemError);
         }
       }
 
