@@ -41,9 +41,9 @@ export const RenderItem = (props) => {
         
         <View style={styles.cardContent}>
           <Text style={{ color: themeObject.colors.primary, fontWeight: '700', fontSize: 10 }}>
-             {animalsList.find(a => String(a.an_id) === String(item.it_an_id))?.an_name?.toUpperCase() || '---'}
+             {(animalsList || []).find(a => String(a.an_id) === String(item.it_an_id))?.an_name?.toUpperCase() || '---'}
              {' • '}
-             {brandsList?.find(b => String(b.br_id) === String(item.it_br_id))?.br_name?.toUpperCase() || '---'}
+             {(brandsList || []).find(b => String(b.br_id) === String(item.it_br_id))?.br_name?.toUpperCase() || '---'}
           </Text>
           <Text style={{ color: themeObject.colors.text, fontSize: 14 }} numberOfLines={2}>{item.it_name}</Text>
           <Text style={{ color: themeObject.colors.primary, fontSize: 14 }}>{Number(item.it_price).toFixed(2)} Br</Text>

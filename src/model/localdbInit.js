@@ -36,6 +36,55 @@ export async function migrateDbIfNeeded(db) {
   `);
 
   await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS characteristic_values (
+      cv_id TEXT PRIMARY KEY,
+      cv_value TEXT NOT NULL,
+      cv_an_id TEXT
+    );
+  `);
+
+  const cvTableInfo = await db.getAllAsync("PRAGMA table_info(characteristic_values);");
+  const hasCvValueColumn = cvTableInfo.some(column => column.name === 'cv_value');
+  const hasCvAnIdColumn = cvTableInfo.some(column => column.name === 'cv_an_id');
+
+  if (!hasCvValueColumn) {
+    // Если таблицы еще нет или в ней старая колонка cv_name
+    const hasCvName = cvTableInfo.some(column => column.name === 'cv_name');
+    if (hasCvName) {
+      await db.execAsync(`ALTER TABLE characteristic_values RENAME COLUMN cv_name TO cv_value;`);
+    } else {
+      await db.execAsync(`ALTER TABLE characteristic_values ADD COLUMN cv_value TEXT NOT NULL DEFAULT '';`);
+    }
+  }
+
+  if (!hasCvAnIdColumn) {
+    await db.execAsync(`ALTER TABLE characteristic_values ADD COLUMN cv_an_id TEXT;`);
+  }
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS items_m2m_characteristic_values (
+      icv_id TEXT PRIMARY KEY,
+      icv_it_id TEXT,
+      icv_cv_id TEXT
+    );
+  `);
+
+  const m2mTableInfo = await db.getAllAsync("PRAGMA table_info(items_m2m_characteristic_values);");
+  const hasIcvItId = m2mTableInfo.some(column => column.name === 'icv_it_id');
+
+  if (!hasIcvItId) {
+    // Если таблица была создана со старыми именами m2m_it_id, удалим и пересоздадим (так как данных там мало и они синхронизируются)
+    await db.execAsync(`DROP TABLE IF EXISTS items_m2m_characteristic_values;`);
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS items_m2m_characteristic_values (
+        icv_id TEXT PRIMARY KEY,
+        icv_it_id TEXT,
+        icv_cv_id TEXT
+      );
+    `);
+  }
+
+  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS weather_cache (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       temp REAL,
