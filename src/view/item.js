@@ -130,20 +130,22 @@ export const RenderItem = (props) => {
               <Ionicons name="share-social-outline" size={24} color={themeObject.colors.text} />
             </TouchableOpacity>
             
-            {cartItem ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: themeObject.colors.border, borderRadius: 15, paddingHorizontal: 5 }}>
-                <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount - 1)}>
-                  <Ionicons name="remove" size={20} color={themeObject.colors.text} />
+            {userId && (
+              cartItem ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: themeObject.colors.border, borderRadius: 15, paddingHorizontal: 5 }}>
+                  <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount - 1)}>
+                    <Ionicons name="remove" size={20} color={themeObject.colors.text} />
+                  </TouchableOpacity>
+                  <Text style={{ marginHorizontal: 8, color: themeObject.colors.text, fontWeight: 'bold' }}>{cartItem.ai_amount}</Text>
+                  <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount + 1)}>
+                    <Ionicons name="add" size={20} color={themeObject.colors.text} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => handleUpdateCart(1)}>
+                  <Ionicons name="cart-outline" size={24} color={themeObject.colors.primary} />
                 </TouchableOpacity>
-                <Text style={{ marginHorizontal: 8, color: themeObject.colors.text, fontWeight: 'bold' }}>{cartItem.ai_amount}</Text>
-                <TouchableOpacity onPress={() => handleUpdateCart(cartItem.ai_amount + 1)}>
-                  <Ionicons name="add" size={20} color={themeObject.colors.text} />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity onPress={() => handleUpdateCart(1)}>
-                <Ionicons name="cart-outline" size={24} color={themeObject.colors.primary} />
-              </TouchableOpacity>
+              )
             )}
           </View>
         )}

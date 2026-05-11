@@ -1,20 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useContext, useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { AuthModal } from '../../src/view/authModal';
 import { SimplePicker } from '../../src/view/simplePicker';
 import { useLanguageSelector } from '../../src/viewModel/hooks/useLanguageSelector';
 import { useThemeSelector } from '../../src/viewModel/hooks/useThemeSelector';
+import { useUserRole } from '../../src/viewModel/hooks/useUserRole';
 import { ThemeContext } from '../../src/viewModel/providers/themeProvider';
 import * as NotificationService from '../../src/viewModel/services/notificationService';
 
 import { supabase } from '../../src/model/supabase';
-import { AuthModal } from '../../src/view/authModal';
 
 export default function SettingsScreen() {
   const { themeObject } = useContext(ThemeContext);
   const { selectedLanguage, languageOptions, handleLanguageChange, tLang } = useLanguageSelector();
   const { selectedTheme, themeOptions, handleThemeChange, tTheme } = useThemeSelector();
+  const { isAdmin, userProfile } = useUserRole();
+  const router = useRouter();
 
   const [notifsEnabled, setNotifsEnabled] = useState(false);
   const [notificationTime, setNotificationTime] = useState(new Date()); 
@@ -99,7 +104,7 @@ export default function SettingsScreen() {
           <View style={[styles.profileCard, { backgroundColor: themeObject.colors.surface || '#f9f9f9' }]}>
             <View>
               <Text style={{ color: themeObject.colors.text, fontSize: 16 }}>{user.email}</Text>
-              {user.id === '6f4d907f-b751-48da-b434-0ebb68792299' && (
+              {isAdmin && (
                 <Text style={{ color: themeObject.colors.primary, fontSize: 12, fontWeight: 'bold' }}>
                   {tLang('auth.admin')}
                 </Text>
@@ -136,33 +141,55 @@ export default function SettingsScreen() {
         <SimplePicker selectedValue={selectedTheme} onValueChange={handleThemeChange} items={themeOptions} themeObject={themeObject} />
       </View>
 
-      {/* УВЕДОМЛЕНИЯ */}
-      <View style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: themeObject.colors.border, paddingTop: 20 }]}>
-        <Text style={[styles.label, { color: themeObject.colors.text }]}>
-          {tLang('settings.notifications')}
-        </Text>
-        <Switch value={notifsEnabled} onValueChange={toggleNotifications} trackColor={{ false: "#767577", true: themeObject.colors.primary }} />
-      </View>
-
-      <View style={styles.timeSettingRow}>
-        <Text style={{ color: themeObject.colors.text, fontSize: 16 }}>
-          {tLang('settings.reminderTime')}
-        </Text>
-        {Platform.OS === 'ios' ? (
-          <DateTimePicker value={notificationTime} mode="time" display="default" onChange={onTimeChange} style={{ width: 100 }} />
-        ) : (
-          <TouchableOpacity onPress={() => setShowPicker(true)} style={[styles.timeButton, { backgroundColor: themeObject.colors.surface || '#eee' }]}>
-            <Text style={{ color: themeObject.colors.primary, fontWeight: 'bold' }}>{formatTime(notificationTime)}</Text>
+      {/* ИСТОРИЯ ЗАКАЗОВ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ПОЛЬЗОВАТЕЛЕЙ) */}
+      {user && !isAdmin && (
+        <View style={{ borderTopWidth: 1, borderTopColor: themeObject.colors.border, paddingTop: 20, marginBottom: 20 }}>
+          <TouchableOpacity 
+            style={[styles.historyButton, { backgroundColor: themeObject.colors.surface || '#eee' }]}
+            onPress={() => router.push('/order-history')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="receipt-outline" size={24} color={themeObject.colors.primary} />
+              <Text style={{ color: themeObject.colors.text, marginLeft: 15, fontSize: 16, fontWeight: '500' }}>
+                {tLang('order.history')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={themeObject.colors.border} />
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
 
-      <Text style={{ color: themeObject.colors.secondaryText || '#666', fontSize: 12, marginTop: 8 }}>
-        {tLang('settings.notificationDesc', { time: formatTime(notificationTime) })}
-      </Text>
+      {/* УВЕДОМЛЕНИЯ (ТОЛЬКО ДЛЯ АДМИНА) */}
+      {isAdmin && (
+        <>
+          <View style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: themeObject.colors.border, paddingTop: 20 }]}>
+            <Text style={[styles.label, { color: themeObject.colors.text }]}>
+              {tLang('settings.notifications')}
+            </Text>
+            <Switch value={notifsEnabled} onValueChange={toggleNotifications} trackColor={{ false: "#767577", true: themeObject.colors.primary }} />
+          </View>
 
-      {showPicker && Platform.OS === 'android' && (
-        <DateTimePicker value={notificationTime} mode="time" is24Hour={true} onChange={onTimeChange} />
+          <View style={styles.timeSettingRow}>
+            <Text style={{ color: themeObject.colors.text, fontSize: 16 }}>
+              {tLang('settings.reminderTime')}
+            </Text>
+            {Platform.OS === 'ios' ? (
+              <DateTimePicker value={notificationTime} mode="time" display="default" onChange={onTimeChange} style={{ width: 100 }} />
+            ) : (
+              <TouchableOpacity onPress={() => setShowPicker(true)} style={[styles.timeButton, { backgroundColor: themeObject.colors.surface || '#eee' }]}>
+                <Text style={{ color: themeObject.colors.primary, fontWeight: 'bold' }}>{formatTime(notificationTime)}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <Text style={{ color: themeObject.colors.secondaryText || '#666', fontSize: 12, marginTop: 8 }}>
+            {tLang('settings.notificationDesc', { time: formatTime(notificationTime) })}
+          </Text>
+
+          {showPicker && Platform.OS === 'android' && (
+            <DateTimePicker value={notificationTime} mode="time" is24Hour={true} onChange={onTimeChange} />
+          )}
+        </>
       )}
 
       <AuthModal 
@@ -188,5 +215,12 @@ const styles = StyleSheet.create({
   label: { fontSize: 16, fontWeight: '500', marginBottom: 8 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   timeSettingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
-  timeButton: { padding: 10, borderRadius: 8 }
+  timeButton: { padding: 10, borderRadius: 8 },
+  historyButton: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: 15, 
+    borderRadius: 12 
+  }
 });

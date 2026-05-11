@@ -21,6 +21,8 @@ function RootContent() {
       />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="order-placement" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="order-history" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
     </>
   );
