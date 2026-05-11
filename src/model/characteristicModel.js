@@ -8,9 +8,13 @@ export const clearCharacteristicValues = async (db) => {
 
 export const insertCharacteristicValue = async (db, cv) => {
   await db.runAsync(
-    'INSERT INTO characteristic_values (cv_id, cv_value, cv_an_id) VALUES (?, ?, ?);',
+    'INSERT OR REPLACE INTO characteristic_values (cv_id, cv_value, cv_an_id) VALUES (?, ?, ?);',
     [cv.cv_id, cv.cv_value, cv.cv_an_id]
   );
+};
+
+export const deleteCharacteristicValueById = async (db, id) => {
+  await db.runAsync('DELETE FROM characteristic_values WHERE cv_id = ?;', [id]);
 };
 
 export const getM2MCharacteristics = async (db) => {
@@ -23,7 +27,7 @@ export const clearM2MCharacteristics = async (db) => {
 
 export const insertM2MCharacteristic = async (db, m2m) => {
   await db.runAsync(
-    'INSERT INTO items_m2m_characteristic_values (icv_id, icv_it_id, icv_cv_id) VALUES (?, ?, ?);',
+    'INSERT OR REPLACE INTO items_m2m_characteristic_values (icv_id, icv_it_id, icv_cv_id) VALUES (?, ?, ?);',
     [m2m.icv_id, m2m.icv_it_id, m2m.icv_cv_id]
   );
 };

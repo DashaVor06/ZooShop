@@ -16,16 +16,28 @@ export const supabaseBrandService = (db) => {
   }, [db]);
 
   const pullBrandsFromServer = useCallback(async () => {
-    if (!isConnected) return;
+    if (!isConnected || !db) return;
     try {
       const { data, error } = await supabase.from("brands").select("*");
       if (error) throw error;
+      
       await clearBrands(db);
-      for (const b of data || []) {
-        await insertBrand(db, { br_id: b.br_id, br_name: b.br_name });
+      
+      if (data && data.length > 0) {
+        for (const b of data) {
+          await insertBrand(db, { br_id: b.br_id, br_name: b.br_name });
+        }
       }
-      setBrands(await getBrands(db));
-    } catch (e) { console.error("Pull brands error:", e); }
+      
+      const updated = await getBrands(db);
+      setBrands(updated || []);
+    } catch (e) { 
+      console.error("Pull brands error:", e);
+      const cached = await getBrands(db);
+      setBrands(cached || []);
+    } finally {
+      setLoading(false);
+    }
   }, [db, isConnected]);
 
   
@@ -58,9 +70,40 @@ export const supabaseBrandService = (db) => {
     }
   }, [db, isConnected]);
 
+  const deleteBrand = useCallback(async (id) => {
+    try {
+      if (!isConnected) throw new Error("network.error_offline");
+
+      // Проверяем, есть ли товары этого бренда
+      const { count, error: countError } = await supabase
+        .from("items")
+        .select("*", { count: 'exact', head: true })
+        .eq("it_br_id", id);
+
+      if (countError) throw countError;
+      if (count > 0) {
+        throw new Error("catalog.error_brand_has_items");
+      }
+
+      // Удаляем из Supabase
+      const { error } = await supabase.from("brands").delete().eq("br_id", id);
+      if (error) throw error;
+
+      // Удаляем локально
+      const { deleteBrandById } = require("../../model/brandModel");
+      await deleteBrandById(db, id);
+
+      // Обновляем стейт
+      setBrands((prev) => prev.filter((b) => b.br_id !== id));
+    } catch (e) {
+      console.error("Delete brand error:", e);
+      throw e;
+    }
+  }, [db, isConnected]);
+
   useEffect(() => { 
     loadBrands().then(() => isConnected && pullBrandsFromServer()); 
   }, [loadBrands, isConnected]);
 
-  return { brands, loading, loadBrands, addBrand };
+  return { brands, loading, loadBrands, addBrand, deleteBrand };
 };

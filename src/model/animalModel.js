@@ -22,7 +22,7 @@ export const clearAnimals = async (db) => {
 export const insertAnimal = async (db, animal) => {
   try {
     const result = await db.runAsync(
-      'INSERT INTO animals (an_id, an_name) VALUES (?, ?);',
+      'INSERT OR REPLACE INTO animals (an_id, an_name) VALUES (?, ?);',
       [animal.an_id, animal.an_name]
     );
     return result;
@@ -52,6 +52,15 @@ export const getAnimalById = async (db, id) => {
   } catch (error) {
     console.error('Error in getAnimalById:', error);
     return null;
+  }
+};
+
+export const deleteAnimalById = async (db, id) => {
+  try {
+    await db.runAsync('DELETE FROM animals WHERE an_id = ?;', [id]);
+  } catch (error) {
+    console.error('Error deleting animal:', error);
+    throw error;
   }
 };
 

@@ -26,7 +26,7 @@ export const supabaseCharacteristicService = (db) => {
   }, [db]);
 
   const pullFromServer = useCallback(async () => {
-    if (!isConnected) return;
+    if (!isConnected || !db) return;
     try {
       const { data: cvData, error: cvError } = await supabase.from("characteristic_values").select("*");
       if (cvError) throw cvError;
@@ -35,28 +35,64 @@ export const supabaseCharacteristicService = (db) => {
       if (m2mError) throw m2mError;
 
       await clearCharacteristicValues(db);
-      for (const cv of cvData || []) {
-        await insertCharacteristicValue(db, {
-          cv_id: cv.cv_id,
-          cv_value: cv.cv_value,
-          cv_an_id: cv.cv_an_id
-        });
+      if (cvData && cvData.length > 0) {
+        for (const cv of cvData) {
+          await insertCharacteristicValue(db, {
+            cv_id: cv.cv_id,
+            cv_value: cv.cv_value,
+            cv_an_id: cv.cv_an_id
+          });
+        }
       }
 
       await clearM2MCharacteristics(db);
-      for (const m2m of m2mData || []) {
-        await insertM2MCharacteristic(db, {
-          icv_id: m2m.icv_id,
-          icv_it_id: m2m.icv_it_id,
-          icv_cv_id: m2m.icv_cv_id
-        });
+      if (m2mData && m2mData.length > 0) {
+        for (const m2m of m2mData) {
+          await insertM2MCharacteristic(db, {
+            icv_id: m2m.icv_id,
+            icv_it_id: m2m.icv_it_id,
+            icv_cv_id: m2m.icv_cv_id
+          });
+        }
       }
 
       await loadData();
     } catch (e) {
       console.error("Pull characteristics error:", e);
+      await loadData();
     }
   }, [db, isConnected, loadData]);
+
+  const deleteSubcategory = useCallback(async (id) => {
+    try {
+      if (!isConnected) throw new Error("network.error_offline");
+
+      // Проверяем, есть ли товары с этой подкатегорией
+      const { count, error: countError } = await supabase
+        .from("items_m2m_characteristic_values")
+        .select("*", { count: 'exact', head: true })
+        .eq("icv_cv_id", id);
+
+      if (countError) throw countError;
+      if (count > 0) {
+        throw new Error("catalog.error_subcategory_has_items");
+      }
+
+      // Удаляем из Supabase
+      const { error } = await supabase.from("characteristic_values").delete().eq("cv_id", id);
+      if (error) throw error;
+
+      // Удаляем локально
+      const { deleteCharacteristicValueById } = require("../../model/characteristicModel");
+      await deleteCharacteristicValueById(db, id);
+
+      // Обновляем стейт
+      setCharacteristicValues((prev) => prev.filter((cv) => cv.cv_id !== id));
+    } catch (e) {
+      console.error("Delete subcategory error:", e);
+      throw e;
+    }
+  }, [db, isConnected]);
 
   useEffect(() => {
     loadData().then(() => {
@@ -64,5 +100,5 @@ export const supabaseCharacteristicService = (db) => {
     });
   }, [loadData, isConnected, pullFromServer]);
 
-  return { characteristicValues, m2mCharacteristics, loading };
+  return { characteristicValues, m2mCharacteristics, loading, deleteSubcategory };
 };

@@ -99,6 +99,9 @@ const i18n = new I18n({
       error_category_required: 'Please select a category',
       error_brand_required: 'Please select a brand',
       error_price_required: 'Please enter a valid price',
+      error_category_has_items: 'Cannot delete category: it contains items',
+      error_brand_has_items: 'Cannot delete brand: it has items',
+      error_subcategory_has_items: 'Cannot delete subcategory: it has items',
     },
     themes: {
       dark: 'Dark',
@@ -219,6 +222,9 @@ const i18n = new I18n({
       error_category_required: 'Выберите категорию',
       error_brand_required: 'Выберите бренд',
       error_price_required: 'Введите корректную цену',
+      error_category_has_items: 'Нельзя удалить категорию: в ней есть товары',
+      error_brand_has_items: 'Нельзя удалить бренд: у него есть товары',
+      error_subcategory_has_items: 'Нельзя удалить подкатегорию: в ней есть товары',
     },
     themes: {
       dark: 'Тёмная',

@@ -81,17 +81,17 @@ export async function migrateDbIfNeeded(db) {
         icv_it_id TEXT,
         icv_cv_id TEXT
       );
-    `);
-  }
+      `);
+      }
 
   await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS weather_cache (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      temp REAL,
-      description TEXT,
-      icon TEXT,
-      city TEXT,
-      timestamp INTEGER
+    CREATE TABLE IF NOT EXISTS promotions (
+      pr_id INTEGER PRIMARY KEY,
+      pr_start_date TEXT NOT NULL,
+      pr_end_date TEXT,
+      pr_discount_percentage INTEGER,
+      pr_cv_id INTEGER,
+      pr_br_id INTEGER
     );
   `);
 }

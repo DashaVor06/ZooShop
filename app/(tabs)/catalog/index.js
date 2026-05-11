@@ -27,8 +27,9 @@ import { ThemeContext } from "../../../src/viewModel/providers/themeProvider";
 import { imagekitService } from "../../../src/viewModel/services/imagekitService";
 import { supabaseAnimalService } from "../../../src/viewModel/services/supabaseAnimalService";
 import { supabaseBrandService } from "../../../src/viewModel/services/supabaseBrandService";
-import { supabaseService } from "../../../src/viewModel/services/supabaseService";
 import { supabaseCharacteristicService } from "../../../src/viewModel/services/supabaseCharacteristicService";
+import { supabasePromotionService } from "../../../src/viewModel/services/supabasePromotionService";
+import { supabaseService } from "../../../src/viewModel/services/supabaseService";
 
 import { useCart } from "../../../src/viewModel/providers/cartProvider";
 
@@ -53,10 +54,10 @@ export default function CatalogScreen() {
   } = supabaseService(db);
 
   const { loadImage } = imagekitService();
-  const { animals, addAnimal } = supabaseAnimalService(db);
-  const { brands, addBrand } = supabaseBrandService(db); 
-  const { characteristicValues, m2mCharacteristics } = supabaseCharacteristicService(db);
-
+  const { animals, addAnimal, deleteAnimal } = supabaseAnimalService(db);
+  const { brands, addBrand, deleteBrand } = supabaseBrandService(db);
+  const { characteristicValues, m2mCharacteristics, deleteSubcategory } = supabaseCharacteristicService(db);
+  const { promotions } = supabasePromotionService(db);
   const [selectedFilterId, setSelectedFilterId] = useState(null); // Для брендов или финала
   const [selectedAnimalId, setSelectedAnimalId] = useState(null);
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState(null);
@@ -194,6 +195,25 @@ export default function CatalogScreen() {
     } catch (error) {
       console.error(error);
       showNotification(tLang('catalog.deleteError'), "error");
+    }
+  };
+
+  const handleDeleteCategoryOrBrand = async (id) => {
+    try {
+      if (filterType === 'brands') {
+        await deleteBrand(id);
+      } else if (!selectedAnimalId) {
+        await deleteAnimal(id);
+        if (selectedAnimalId === id) setSelectedAnimalId(null);
+      } else {
+        await deleteSubcategory(id);
+        if (selectedSubcategoryId === id) setSelectedSubcategoryId(null);
+      }
+      showNotification(tLang('catalog.deleteSuccess'));
+    } catch (error) {
+      console.error(error);
+      const errorMessage = error.message.includes('catalog.') ? tLang(error.message) : error.message;
+      showNotification(errorMessage || tLang('catalog.deleteError'), "error");
     }
   };
 
@@ -342,34 +362,42 @@ export default function CatalogScreen() {
                     : String(selectedAnimalId) === String(item.id);
 
                 return (
-                  <TouchableOpacity 
-                    key={String(item.id || index)}
-                    style={{ 
-                      paddingVertical: 12, 
-                      paddingHorizontal: 20,
-                      backgroundColor: isSelected ? themeObject.colors.primary : 'transparent',
-                      borderBottomWidth: index < array.length - 1 ? 0.5 : 0,
-                      borderColor: themeObject.colors.border
-                    }}
-                    onPress={() => {
-                      if (filterType === 'brands') {
-                        setSelectedFilterId(item.id);
-                      } else {
-                        if (!selectedAnimalId) {
-                          setSelectedAnimalId(item.id);
+                  <View key={String(item.id || index)} style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: index < array.length - 1 ? 0.5 : 0, borderColor: themeObject.colors.border }}>
+                    <TouchableOpacity 
+                      style={{ 
+                        flex: 1,
+                        paddingVertical: 12, 
+                        paddingHorizontal: 20,
+                        backgroundColor: isSelected ? themeObject.colors.primary : 'transparent',
+                      }}
+                      onPress={() => {
+                        if (filterType === 'brands') {
+                          setSelectedFilterId(item.id);
                         } else {
-                          setSelectedSubcategoryId(item.id);
+                          if (!selectedAnimalId) {
+                            setSelectedAnimalId(item.id);
+                          } else {
+                            setSelectedSubcategoryId(item.id);
+                          }
                         }
-                      }
-                    }}
-                  >
-                    <Text style={{ 
-                      color: isSelected ? '#FFFFFF' : themeObject.colors.text,
-                      fontWeight: isSelected ? 'bold' : 'normal'
-                    }}>
-                      {item.name}
-                    </Text>
-                  </TouchableOpacity>
+                      }}
+                    >
+                      <Text style={{ 
+                        color: isSelected ? '#FFFFFF' : themeObject.colors.text,
+                        fontWeight: isSelected ? 'bold' : 'normal'
+                      }}>
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                    {isAdmin && item.id !== null && (
+                      <TouchableOpacity 
+                        onPress={() => handleDeleteCategoryOrBrand(item.id)}
+                        style={{ paddingHorizontal: 15 }}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={isSelected ? "#FFFFFF" : (themeObject.colors.error || "#FF3B30")} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 );
               })}
             </View>
@@ -410,6 +438,8 @@ export default function CatalogScreen() {
             }}
             animalsList={animals}
             brandsList={brands}
+            promotions={promotions}
+            m2mCharacteristics={m2mCharacteristics}
             isAdmin={isAdmin}
             onPress={handleItemPress}
             userId={userId}

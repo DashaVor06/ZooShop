@@ -21,22 +21,28 @@ export const supabaseAnimalService = (db) => {
   }, [db]);
 
   const pullAnimalsFromServer = useCallback(async () => {
-    if (!isConnected) return;
+    if (!isConnected || !db) return;
     try {
       const { data, error } = await supabase.from("animals").select("*");
       if (error) throw error;
 
       await clearAnimals(db);
-      for (const animal of data || []) {
-        await insertAnimal(db, {
-          an_id: animal.an_id,
-          an_name: animal.an_name,
-        });
+      if (data && data.length > 0) {
+        for (const animal of data) {
+          await insertAnimal(db, {
+            an_id: animal.an_id,
+            an_name: animal.an_name,
+          });
+        }
       }
       const updated = await getAnimals(db);
       setAnimals(updated || []);
     } catch (e) {
       console.error("Pull animals error:", e);
+      const cached = await getAnimals(db);
+      setAnimals(cached || []);
+    } finally {
+      setLoading(false);
     }
   }, [db, isConnected]);
 
@@ -69,11 +75,42 @@ export const supabaseAnimalService = (db) => {
     }
   }, [db, isConnected]);
 
+  const deleteAnimal = useCallback(async (id) => {
+    try {
+      if (!isConnected) throw new Error("network.error_offline");
+
+      // Проверяем, есть ли товары в этой категории
+      const { count, error: countError } = await supabase
+        .from("items")
+        .select("*", { count: 'exact', head: true })
+        .eq("it_an_id", id);
+
+      if (countError) throw countError;
+      if (count > 0) {
+        throw new Error("catalog.error_category_has_items");
+      }
+
+      // Удаляем из Supabase
+      const { error } = await supabase.from("animals").delete().eq("an_id", id);
+      if (error) throw error;
+
+      // Удаляем локально
+      const { deleteAnimalById } = require("../../model/animalModel");
+      await deleteAnimalById(db, id);
+
+      // Обновляем стейт
+      setAnimals((prev) => prev.filter((a) => a.an_id !== id));
+    } catch (e) {
+      console.error("Delete animal error:", e);
+      throw e;
+    }
+  }, [db, isConnected]);
+
   useEffect(() => {
     loadAnimals().then(() => {
       if (isConnected) pullAnimalsFromServer();
     });
   }, [loadAnimals, isConnected, pullAnimalsFromServer]);
 
-  return { animals, loading, loadAnimals, pullAnimalsFromServer, addAnimal };
+  return { animals, loading, loadAnimals, pullAnimalsFromServer, addAnimal, deleteAnimal };
 };

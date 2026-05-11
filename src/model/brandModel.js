@@ -6,6 +6,10 @@ export const clearBrands = async (db) => {
   await db.runAsync('DELETE FROM brands;');
 };
 
+export const deleteBrandById = async (db, id) => {
+  await db.runAsync('DELETE FROM brands WHERE br_id = ?;', [id]);
+};
+
 export const insertBrand = async (db, brand) => {
-  await db.runAsync('INSERT INTO brands (br_id, br_name) VALUES (?, ?);', [brand.br_id, brand.br_name]);
+  await db.runAsync('INSERT OR REPLACE INTO brands (br_id, br_name) VALUES (?, ?);', [brand.br_id, brand.br_name]);
 };
