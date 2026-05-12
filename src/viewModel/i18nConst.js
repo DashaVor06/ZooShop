@@ -65,6 +65,8 @@ const i18n = new I18n({
       customer: 'Customer',
       updateStatus: 'Update Status',
       allOrders: 'All Orders',
+      bonuses: 'Bonuses',
+      available: 'Available',
     },
     catalog: {
       price: 'Price',
@@ -214,6 +216,8 @@ const i18n = new I18n({
       customer: 'Клиент',
       updateStatus: 'Изменить статус',
       allOrders: 'Все заказы',
+      bonuses: 'Бонусы',
+      available: 'Доступно',
     },
     catalog: {
       price: 'Цена',

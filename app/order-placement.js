@@ -11,6 +11,7 @@ import {
     Text,
     TouchableOpacity,
     View,
+    TextInput,
 } from "react-native";
 import { supabase } from "../src/model/supabase";
 import { useLanguageSelector } from "../src/viewModel/hooks/useLanguageSelector";
@@ -37,6 +38,7 @@ export default function OrderPlacementScreen() {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [bonusesToUse, setBonusesToUse] = useState(0);
 
   const [items, setItems] = useState([]);
   const [promotions, setPromotions] = useState([]);
@@ -101,9 +103,17 @@ export default function OrderPlacementScreen() {
     });
   }, [items, promotions, m2mChars]);
 
-  const totalSum = useMemo(() => {
+  const originalTotalSum = useMemo(() => {
     return itemsWithDiscounts.reduce((sum, item) => sum + item.finalPrice * item.ai_amount, 0);
   }, [itemsWithDiscounts]);
+
+  const bonusDiscount = useMemo(() => {
+    return bonusesToUse / 100;
+  }, [bonusesToUse]);
+
+  const finalTotalSum = useMemo(() => {
+    return Math.max(0, originalTotalSum - bonusDiscount);
+  }, [originalTotalSum, bonusDiscount]);
 
   const handlePlaceOrder = async () => {
     if (!selectedCity) {
@@ -124,11 +134,15 @@ export default function OrderPlacementScreen() {
       ord_acc_id: userProfile.acc_id,
       ord_sh_id: selectedShop,
       ord_pm_id: selectedPayment,
-      ord_final_sum: totalSum,
-      ord_st_id: 1, // Default storage or handle logic
+      ord_final_sum: finalTotalSum,
+      ord_st_id: 1, 
     };
 
-    const { error } = await createOrder(orderData, itemsWithDiscounts.map(i => ({ it_id: i.ai_it_id, amount: i.ai_amount, price: i.finalPrice })));
+    const { error } = await createOrder(
+      orderData, 
+      itemsWithDiscounts.map(i => ({ it_id: i.ai_it_id, amount: i.ai_amount, price: i.finalPrice })),
+      bonusesToUse
+    );
 
     if (error) {
       Alert.alert(tLang("common.error"), tLang("order.error"));
@@ -150,6 +164,8 @@ export default function OrderPlacementScreen() {
       </View>
     );
   }
+
+  const availableBonuses = userProfile?.acc_bonus_balance || 0;
 
   return (
     <View style={[styles.container, { backgroundColor: themeObject.colors.background }]}>
@@ -224,6 +240,33 @@ export default function OrderPlacementScreen() {
           </View>
         </View>
 
+        {/* BONUSES */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeObject.colors.text }]}>
+            {tLang("order.bonuses") || "Бонусы"} (Доступно: {availableBonuses})
+          </Text>
+          <View style={[styles.bonusInputContainer, { borderColor: themeObject.colors.border }]}>
+            <TextInput
+              style={[styles.bonusInput, { color: themeObject.colors.text }]}
+              placeholder="0"
+              placeholderTextColor={themeObject.colors.secondaryText}
+              keyboardType="numeric"
+              value={bonusesToUse.toString()}
+              onChangeText={(text) => {
+                const val = parseInt(text) || 0;
+                // Min final sum must be 1.50 Br
+                const maxDiscountAllowed = Math.max(0, originalTotalSum - 1.5);
+                const maxAllowedByMinSum = Math.floor(maxDiscountAllowed * 100);
+                const clamped = Math.min(val, availableBonuses, maxAllowedByMinSum);
+                setBonusesToUse(clamped);
+              }}
+            />
+            <Text style={{ color: themeObject.colors.secondaryText, marginRight: 8 }}>
+              - {bonusDiscount.toFixed(2)} Br
+            </Text>
+          </View>
+        </View>
+
         {/* ITEMS SUMMARY */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: themeObject.colors.text }]}>{tLang("order.summary")}</Text>
@@ -245,7 +288,14 @@ export default function OrderPlacementScreen() {
         {/* TOTAL */}
         <View style={[styles.totalContainer, { borderTopColor: themeObject.colors.border }]}>
           <Text style={[styles.totalLabel, { color: themeObject.colors.text }]}>{tLang("order.total")}:</Text>
-          <Text style={[styles.totalValue, { color: themeObject.colors.primary }]}>{totalSum.toFixed(2)} Br</Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            {bonusDiscount > 0 && (
+              <Text style={{ color: themeObject.colors.secondaryText, textDecorationLine: 'line-through' }}>
+                {originalTotalSum.toFixed(2)} Br
+              </Text>
+            )}
+            <Text style={[styles.totalValue, { color: themeObject.colors.primary }]}>{finalTotalSum.toFixed(2)} Br</Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -284,6 +334,14 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   pickerContainer: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  bonusInputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderRadius: 8, 
+    paddingHorizontal: 8 
+  },
+  bonusInput: { flex: 1, height: 40 },
   totalContainer: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 

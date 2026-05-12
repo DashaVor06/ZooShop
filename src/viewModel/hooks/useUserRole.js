@@ -10,7 +10,7 @@ export const useUserRole = () => {
     try {
       const { data, error } = await supabase
         .from('accounts') 
-        .select('acc_id, acc_r_id')
+        .select('acc_id, acc_r_id, acc_bonus_balance')
         .eq('acc_id', userId)
         .single();
       

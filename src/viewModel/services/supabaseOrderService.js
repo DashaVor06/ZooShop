@@ -39,18 +39,38 @@ export const supabaseOrderService = () => {
     }
   };
 
-  const createOrder = async (orderData, items) => {
+  const createOrder = async (orderData, items, bonusesUsed = 0) => {
     try {
+      // Calculate bonuses to be earned (5 kopeks per 1 ruble = 5 bonuses)
+      const bonusesToEarn = Math.floor((orderData.ord_final_sum || 0) * 5);
+
       // 1. Insert into orders
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert([orderData])
+        .insert([{ ...orderData, ord_bonuses_used: bonusesUsed, ord_bonuses_earned: bonusesToEarn }])
         .select()
         .single();
 
       if (orderError) throw orderError;
 
-      // 2. Insert initial status (ID 1) into orders_m2m_statuses
+      // 2. Deduct bonuses from user account if any used
+      if (bonusesUsed > 0) {
+        const { data: account, error: accFetchError } = await supabase
+          .from("accounts")
+          .select("acc_bonus_balance")
+          .eq("acc_id", orderData.ord_acc_id)
+          .single();
+        
+        if (!accFetchError && account) {
+          const newBonuses = Math.max(0, (account.acc_bonus_balance || 0) - bonusesUsed);
+          await supabase
+            .from("accounts")
+            .update({ acc_bonus_balance: newBonuses })
+            .eq("acc_id", orderData.ord_acc_id);
+        }
+      }
+
+      // 3. Insert initial status (ID 1) into orders_m2m_statuses
       const { error: statusError } = await supabase
         .from("orders_m2m_statuses")
         .insert([{
@@ -61,13 +81,7 @@ export const supabaseOrderService = () => {
 
       if (statusError) {
         console.error("Error setting initial order status:", statusError);
-        // We don't necessarily throw here if we want the order to persist, 
-        // but it's better to log it.
       }
-
-      // 3. Insert into orders_m2m_items (if applicable - checking provided schema)
-      // The schema for orders_m2m_items didn't have ord_id, so we skip it for now 
-      // or assume it's handled elsewhere.
 
       // 4. Clearing the basket for the items that were ordered
       const { error: clearError } = await supabase
@@ -145,6 +159,15 @@ export const supabaseOrderService = () => {
 
   const updateOrderStatus = async (orderId, statusId) => {
     try {
+      // Fetch all existing statuses to find the real maximum ID
+      const { data: allStatuses, error: statError } = await supabase
+        .from("statuses")
+        .select("stat_id");
+      
+      if (statError) throw statError;
+      
+      const maxStatusId = Math.max(...allStatuses.map(s => s.stat_id));
+
       // We check if at least one status exists
       const { data: existing, error: fetchError } = await supabase
         .from("orders_m2m_statuses")
@@ -176,6 +199,54 @@ export const supabaseOrderService = () => {
           }]);
         if (insertError) throw insertError;
       }
+
+      // If status is maximal, add bonuses
+      console.log(`Checking status: ${statusId} against maxStatus: ${maxStatusId}`);
+      if (Number(statusId) === Number(maxStatusId)) {
+        // Check if bonuses were already added (if final status already exists in history)
+        const alreadyAccrued = existing.some(s => Number(s.os_stat_id) === Number(maxStatusId));
+        console.log(`Is already accrued? ${alreadyAccrued}`);
+        
+        if (!alreadyAccrued) {
+          const { data: order, error: orderFetchError } = await supabase
+            .from("orders")
+            .select("ord_acc_id, ord_bonuses_earned")
+            .eq("ord_id", orderId)
+            .single();
+          
+          if (!orderFetchError && order) {
+            console.log(`Order found for orderId ${orderId}. User acc_id: ${order.ord_acc_id}. Earned bonuses: ${order.ord_bonuses_earned}`);
+            
+            if (order.ord_bonuses_earned > 0) {
+              // Fetch account without .single() to avoid PGRST116 error if not found
+              const { data: accounts, error: accFetchError } = await supabase
+                .from("accounts")
+                .select("acc_bonus_balance")
+                .eq("acc_id", order.ord_acc_id);
+              
+              if (!accFetchError && accounts && accounts.length > 0) {
+                const account = accounts[0];
+                const { error: updateAccError } = await supabase
+                  .from("accounts")
+                  .update({ acc_bonus_balance: (account.acc_bonus_balance || 0) + order.ord_bonuses_earned })
+                  .eq("acc_id", order.ord_acc_id);
+                
+                if (!updateAccError) {
+                  console.log(`SUCCESS: Accrued ${order.ord_bonuses_earned} bonuses to user ${order.ord_acc_id}`);
+                } else {
+                  console.error("Failed to update account balance:", updateAccError);
+                }
+              } else {
+                console.error(`Account not found or inaccessible for acc_id: ${order.ord_acc_id}. Error:`, accFetchError);
+                console.warn("Hint: Check RLS policies on 'accounts' table. Admin must be able to SELECT and UPDATE users' accounts.");
+              }
+            }
+          } else {
+            console.error("Failed to fetch order for bonus accrual:", orderFetchError);
+          }
+        }
+      }
+
       return { success: true };
     } catch (e) {
       console.error("updateOrderStatus Error:", e);

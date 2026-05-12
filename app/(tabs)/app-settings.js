@@ -102,10 +102,21 @@ export default function SettingsScreen() {
         
         {user ? (
           <View style={[styles.profileCard, { backgroundColor: themeObject.colors.surface || '#f9f9f9' }]}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={{ color: themeObject.colors.text, fontSize: 16 }}>{user.email}</Text>
+              
+              {/* BONUS BALANCE (Only for non-admins) */}
+              {!isAdmin && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                  <Ionicons name="star" size={14} color="#FFD700" />
+                  <Text style={{ color: themeObject.colors.secondaryText, fontSize: 14, marginLeft: 4 }}>
+                    {tLang('order.bonuses')}: {userProfile?.acc_bonus_balance || 0}
+                  </Text>
+                </View>
+              )}
+
               {isAdmin && (
-                <Text style={{ color: themeObject.colors.primary, fontSize: 12, fontWeight: 'bold' }}>
+                <Text style={{ color: themeObject.colors.primary, fontSize: 12, fontWeight: 'bold', marginTop: 4 }}>
                   {tLang('auth.admin')}
                 </Text>
               )}
