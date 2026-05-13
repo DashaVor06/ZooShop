@@ -232,14 +232,14 @@ export const RenderModal = (props) => {
               items={categoryItems}
             />
           ) : (
-            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+            <Text style={{ color: themeObject.colors.error, marginBottom: 10 }}>
               {tLang("catalog.noCategoriesAvailable")}
             </Text>
           )}
 
           {brandItems.length > 0 ? (
             <SimplePicker
-              selectedValue={formBrand} // Добавьте formBrand в пропсы модалки
+              selectedValue={formBrand}
               onValueChange={setFormBrand}
               placeholder={tLang("catalog.brandPlaceholder")}
               themeObject={themeObject}
@@ -248,7 +248,7 @@ export const RenderModal = (props) => {
               items={brandItems}
             />
           ) : (
-            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+            <Text style={{ color: themeObject.colors.error, marginBottom: 10 }}>
               {tLang("catalog.noCategoriesAvailable")}
             </Text>
           )}
@@ -262,7 +262,7 @@ export const RenderModal = (props) => {
               items={storageItems}
             />
           ) : (
-            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+            <Text style={{ color: themeObject.colors.error, marginBottom: 10 }}>
               {tLang("catalog.noStoragesAvailable") || "Нет доступных складов. Добавьте их в настройках."}
             </Text>
           )}
@@ -338,10 +338,10 @@ export const RenderModal = (props) => {
           {/* Кнопки управления */}
           <View style={styles.modalButtons}>
             <TouchableOpacity 
-              style={[styles.modalButton, styles.cancelButton]} 
+              style={[styles.modalButton, styles.cancelButton, { backgroundColor: themeObject.colors.surface }]} 
               onPress={handleClose}
             >
-              <Text style={styles.cancelButtonText}>{tLang("common.cancel")}</Text>
+              <Text style={[styles.cancelButtonText, { color: themeObject.colors.text }]}>{tLang("common.cancel")}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

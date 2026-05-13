@@ -126,13 +126,16 @@ export const InfrastructureModal = ({
           </View>
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
-              <Text style={styles.buttonText}>{tLang("common.cancel")}</Text>
+            <TouchableOpacity 
+              style={[styles.button, styles.cancelButton, { backgroundColor: themeObject.colors.surface }]} 
+              onPress={onClose}
+            >
+              <Text style={[styles.buttonText, { color: themeObject.colors.text }]}>{tLang("common.cancel")}</Text>
             </TouchableOpacity>
 
             {item && (
               <TouchableOpacity 
-                style={[styles.button, { backgroundColor: themeObject.colors.error || '#FF3B30' }]} 
+                style={[styles.button, { backgroundColor: themeObject.colors.error }]} 
                 onPress={() => onDelete(type === 'shop' ? item.sh_id : item.st_d)}
               >
                 <Text style={[styles.buttonText, { color: '#fff' }]}>{tLang("common.delete")}</Text>

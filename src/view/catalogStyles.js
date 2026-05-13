@@ -50,7 +50,6 @@ imageContainer: {
   },
   divider: {
     height: 1,
-    backgroundColor: "#e0e0e0",
     marginBottom: 8,
   },
   productDescription: {
@@ -65,7 +64,6 @@ imageContainer: {
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
   },
   priceLabel: {
     fontSize: 14,
@@ -143,13 +141,11 @@ imageContainer: {
     marginHorizontal: 5,
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
   },
   saveButton: {
     backgroundColor: '#007AFF',
   },
   cancelButtonText: {
-    color: '#333',
     fontSize: 16,
     fontWeight: '600',
   },

@@ -28,15 +28,15 @@ export const renderConfirmModal = ({
           </Text>
           <View style={styles.confirmButtons}>
             <TouchableOpacity
-              style={[styles.confirmButton, styles.cancelConfirmButton]}
+              style={[styles.confirmButton, styles.cancelConfirmButton, { backgroundColor: themeObject.colors.surface }]}
               onPress={() => setConfirmModalVisible(false)}
             >
-              <Text style={styles.cancelConfirmText}>
+              <Text style={[styles.cancelConfirmText, { color: themeObject.colors.text }]}>
                 {tLang('common.cancel')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.confirmButton, styles.deleteConfirmButton]}
+              style={[styles.confirmButton, styles.deleteConfirmButton, { backgroundColor: themeObject.colors.error }]}
               onPress={handleDeleteItem}
             >
               <Text style={styles.deleteConfirmText}>

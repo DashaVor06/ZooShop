@@ -135,7 +135,7 @@ export const AuthModal = ({ visible, onClose, themeObject, onAuthSuccess }) => {
 
           <View style={styles.confirmButtons}>
             <TouchableOpacity
-              style={[styles.confirmButton, styles.cancelConfirmButton, { borderColor: themeObject.colors.primary, borderWidth: 1 }]}
+              style={[styles.confirmButton, styles.cancelConfirmButton, { backgroundColor: themeObject.colors.surface, borderColor: themeObject.colors.primary, borderWidth: 1 }]}
               onPress={handleClose}
               disabled={loading}
             >

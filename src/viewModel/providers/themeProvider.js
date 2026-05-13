@@ -13,7 +13,19 @@ export const ThemeProvider = ({ children }) => {
   }, []);
   
   const getThemeObject = (name) => {
-    return name === 'dark' ? DarkTheme : DefaultTheme;
+    const baseTheme = name === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...baseTheme,
+      colors: {
+        ...baseTheme.colors,
+        surface: name === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        secondaryText: name === 'dark' ? '#AAAAAA' : '#666666',
+        inputBackground: name === 'dark' ? '#2C2C2C' : '#F5F5F5',
+        placeholder: name === 'dark' ? '#777777' : '#999999',
+        error: '#FF3B30',
+        success: '#34C759',
+      }
+    };
   };
 
   const loadTheme = async () => {

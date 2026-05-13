@@ -32,7 +32,7 @@ export const SimplePicker = ({
             borderWidth: 1,
             borderRadius: 8,
             borderColor: themeObject.colors.border,
-            backgroundColor: themeObject.colors.background,
+            backgroundColor: themeObject.colors.inputBackground,
             color: themeObject.colors.text,
             fontSize: 16,
             minHeight: 48,
@@ -49,7 +49,7 @@ export const SimplePicker = ({
             borderWidth: 1,
             borderRadius: 8,
             borderColor: themeObject.colors.border,
-            backgroundColor: themeObject.colors.background,
+            backgroundColor: themeObject.colors.inputBackground,
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -58,7 +58,7 @@ export const SimplePicker = ({
           onPress={() => setIsOpen(!isOpen)}
         >
           <Text style={{
-            color: selectedItem ? themeObject.colors.text : (themeObject.colors.placeholder || "#888888"),
+            color: selectedItem ? themeObject.colors.text : themeObject.colors.placeholder,
             fontSize: 16,
           }}>
             {selectedItem ? selectedItem.label : placeholder}
@@ -74,7 +74,8 @@ export const SimplePicker = ({
           borderRadius: 8,
           marginTop: 4,
           maxHeight: 200,
-          backgroundColor: themeObject.colors.background,
+          backgroundColor: themeObject.colors.surface,
+          overflow: 'hidden',
         }}>
           <ScrollView nestedScrollEnabled={true}>
             {items.map((item, index) => (

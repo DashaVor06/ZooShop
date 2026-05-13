@@ -141,8 +141,8 @@ export const PromotionModal = ({
           </ScrollView>
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity onPress={onClose} style={[styles.button, { backgroundColor: '#ccc' }]}>
-              <Text>Отмена</Text>
+            <TouchableOpacity onPress={onClose} style={[styles.button, { backgroundColor: themeObject.colors.surface }]}>
+              <Text style={{ color: themeObject.colors.text }}>{tLang("common.cancel") || "Отмена"}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleSave} style={[styles.button, { backgroundColor: themeObject.colors.primary }]}>
               <Text style={{ color: '#fff' }}>Сохранить</Text>
