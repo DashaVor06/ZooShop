@@ -10,6 +10,7 @@ export const calculateDiscountedPrice = (item, promotions, m2mCharacteristics) =
     if (now < start || (end && now > end)) return false;
     
     const brandMatch = p.pr_br_id ? String(p.pr_br_id) === String(item.it_br_id) : true;
+    const animalMatch = p.pr_an_id ? String(p.pr_an_id) === String(item.it_an_id) : true;
     
     let subcatMatch = true;
     if (p.pr_cv_id) {
@@ -17,7 +18,7 @@ export const calculateDiscountedPrice = (item, promotions, m2mCharacteristics) =
         .some(m => String(m.icv_it_id) === String(item.it_id) && String(m.icv_cv_id) === String(p.pr_cv_id));
     }
     
-    return brandMatch && subcatMatch;
+    return brandMatch && animalMatch && subcatMatch;
   });
 
   if (suitablePromos.length === 0) return { price: item.it_price, discount: 0 };

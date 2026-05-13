@@ -91,7 +91,14 @@ export async function migrateDbIfNeeded(db) {
       pr_end_date TEXT,
       pr_discount_percentage INTEGER,
       pr_cv_id INTEGER,
-      pr_br_id INTEGER
+      pr_br_id INTEGER,
+      pr_an_id INTEGER
     );
   `);
+
+  const promoTableInfo = await db.getAllAsync("PRAGMA table_info(promotions);");
+  const hasPrAnIdColumn = promoTableInfo.some(column => column.name === 'pr_an_id');
+  if (!hasPrAnIdColumn) {
+    await db.execAsync(`ALTER TABLE promotions ADD COLUMN pr_an_id INTEGER;`);
+  }
 }

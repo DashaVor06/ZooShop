@@ -35,12 +35,7 @@ export const PromotionModal = ({
       setDiscount(promotion.pr_discount_percentage?.toString() || '');
       setBrId(promotion.pr_br_id);
       setCvId(promotion.pr_cv_id);
-      
-      // Если подкатегория выбрана, определяем её животное для фильтра
-      if (promotion.pr_cv_id) {
-        const subcat = subcategories.find(s => String(s.cv_id) === String(promotion.pr_cv_id));
-        if (subcat) setAnId(subcat.cv_an_id);
-      }
+      setAnId(promotion.pr_an_id);
     } else {
       setStartDate(new Date().toISOString().split('T')[0]);
       setEndDate('');
@@ -49,7 +44,7 @@ export const PromotionModal = ({
       setCvId(null);
       setAnId(null);
     }
-  }, [promotion, visible, subcategories]);
+  }, [promotion, visible]);
 
   const handleSave = () => {
     onSave({
@@ -58,7 +53,8 @@ export const PromotionModal = ({
       pr_end_date: endDate || null,
       pr_discount_percentage: parseInt(discount),
       pr_br_id: brId,
-      pr_cv_id: cvId
+      pr_cv_id: cvId,
+      pr_an_id: anId
     });
   };
 
