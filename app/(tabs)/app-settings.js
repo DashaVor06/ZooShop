@@ -6,11 +6,13 @@ import React, { useContext, useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { AuthModal } from '../../src/view/authModal';
 import { SimplePicker } from '../../src/view/simplePicker';
+import { InfrastructureModal } from '../../src/view/infrastructureModal';
 import { useLanguageSelector } from '../../src/viewModel/hooks/useLanguageSelector';
 import { useThemeSelector } from '../../src/viewModel/hooks/useThemeSelector';
 import { useUserRole } from '../../src/viewModel/hooks/useUserRole';
 import { ThemeContext } from '../../src/viewModel/providers/themeProvider';
 import * as NotificationService from '../../src/viewModel/services/notificationService';
+import { supabaseOrderService } from '../../src/viewModel/services/supabaseOrderService';
 
 import { supabase } from '../../src/model/supabase';
 
@@ -20,6 +22,7 @@ export default function SettingsScreen() {
   const { selectedTheme, themeOptions, handleThemeChange, tTheme } = useThemeSelector();
   const { isAdmin, userProfile } = useUserRole();
   const router = useRouter();
+  const orderService = supabaseOrderService();
 
   const [notifsEnabled, setNotifsEnabled] = useState(false);
   const [notificationTime, setNotificationTime] = useState(new Date()); 
@@ -28,14 +31,24 @@ export default function SettingsScreen() {
   const [user, setUser] = useState(null);
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
 
+  // Infrastructure State
+  const [shops, setShops] = useState([]);
+  const [storages, setStorages] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [infraModalVisible, setInfraModalVisible] = useState(false);
+  const [infraType, setInfraType] = useState('shop');
+  const [editingInfraItem, setEditingInfraItem] = useState(null);
+
   useEffect(() => {
     loadSettings();
+    if (isAdmin) loadInfrastructure();
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [isAdmin]);
 
   const loadSettings = async () => {
     const enabled = await AsyncStorage.getItem('notifications_enabled');
@@ -50,9 +63,82 @@ export default function SettingsScreen() {
     }
   };
 
+  const loadInfrastructure = async () => {
+    const [sData, stData, cData] = await Promise.all([
+      orderService.fetchShops(),
+      orderService.fetchStorages(),
+      orderService.fetchCities()
+    ]);
+    setShops(sData);
+    setStorages(stData);
+    setCities(cData);
+  };
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (!error) Alert.alert(tLang('common.exit'), tLang('auth.logoutSuccess'));
+  };
+
+  const handleSaveInfra = async (infraData) => {
+    try {
+      let finalCityId = infraType === 'shop' ? infraData.sh_c_id : infraData.st_c_id;
+
+      // Если город введен вручную, сначала создаем его
+      if (infraData.isManualCity && typeof finalCityId === 'string' && finalCityId.trim()) {
+        const newCity = await orderService.createCity(finalCityId.trim());
+        finalCityId = newCity.c_id;
+      }
+
+      const payload = { ...infraData };
+      delete payload.isManualCity;
+      if (infraType === 'shop') {
+        payload.sh_c_id = finalCityId;
+        if (editingInfraItem) {
+          await orderService.updateShop(editingInfraItem.sh_id, payload);
+        } else {
+          await orderService.createShop(payload);
+        }
+      } else {
+        payload.st_c_id = finalCityId;
+        if (editingInfraItem) {
+          await orderService.updateStorage(editingInfraItem.st_d, payload);
+        } else {
+          await orderService.createStorage(payload);
+        }
+      }
+      Alert.alert(tLang("common.success"), tLang("catalog.saveSuccess"));
+      setInfraModalVisible(false);
+      loadInfrastructure();
+    } catch (e) {
+      Alert.alert(tLang("common.error"), e.message);
+    }
+  };
+
+  const handleDeleteInfra = async (id) => {
+    Alert.alert(
+      tLang("catalog.confirmDelete"),
+      tLang("catalog.confirmDeleteMessage"),
+      [
+        { text: tLang("common.cancel"), style: 'cancel' },
+        { 
+          text: tLang("common.delete"), 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (infraType === 'shop') {
+                await orderService.deleteShop(id);
+              } else {
+                await orderService.deleteStorage(id);
+              }
+              setInfraModalVisible(false);
+              loadInfrastructure();
+            } catch (e) {
+              Alert.alert(tLang("common.error"), e.message);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const toggleNotifications = async (value) => {
@@ -105,7 +191,6 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: themeObject.colors.text, fontSize: 16 }}>{user.email}</Text>
               
-              {/* BONUS BALANCE (Only for non-admins) */}
               {!isAdmin && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                   <Ionicons name="star" size={14} color="#FFD700" />
@@ -152,7 +237,68 @@ export default function SettingsScreen() {
         <SimplePicker selectedValue={selectedTheme} onValueChange={handleThemeChange} items={themeOptions} themeObject={themeObject} />
       </View>
 
-      {/* ИСТОРИЯ ЗАКАЗОВ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ПОЛЬЗОВАТЕЛЕЙ) */}
+      {/* УПРАВЛЕНИЕ МАГАЗИНАМИ И СКЛАДАМИ (ТОЛЬКО ДЛЯ АДМИНА) */}
+      {isAdmin && (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[styles.sectionTitle, { color: themeObject.colors.text, marginTop: 10 }]}>
+            {tLang('catalog.manageShops')}
+          </Text>
+          {shops.map(shop => (
+            <TouchableOpacity 
+              key={shop.sh_id}
+              style={[styles.infraItem, { borderBottomColor: themeObject.colors.border }]}
+              onPress={() => {
+                setInfraType('shop');
+                setEditingInfraItem(shop);
+                setInfraModalVisible(true);
+              }}
+            >
+              <Text style={{ color: themeObject.colors.text }}>{shop.sh_address}</Text>
+              <Ionicons name="pencil" size={16} color={themeObject.colors.primary} />
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity 
+            style={[styles.addButton, { borderColor: themeObject.colors.primary }]}
+            onPress={() => {
+              setInfraType('shop');
+              setEditingInfraItem(null);
+              setInfraModalVisible(true);
+            }}
+          >
+            <Text style={{ color: themeObject.colors.primary }}>+ {tLang('catalog.addShop')}</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.sectionTitle, { color: themeObject.colors.text, marginTop: 20 }]}>
+            {tLang('catalog.manageStorages')}
+          </Text>
+          {storages.map(storage => (
+            <TouchableOpacity 
+              key={storage.st_d}
+              style={[styles.infraItem, { borderBottomColor: themeObject.colors.border }]}
+              onPress={() => {
+                setInfraType('storage');
+                setEditingInfraItem(storage);
+                setInfraModalVisible(true);
+              }}
+            >
+              <Text style={{ color: themeObject.colors.text }}>{storage.st_address}</Text>
+              <Ionicons name="pencil" size={16} color={themeObject.colors.primary} />
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity 
+            style={[styles.addButton, { borderColor: themeObject.colors.primary }]}
+            onPress={() => {
+              setInfraType('storage');
+              setEditingInfraItem(null);
+              setInfraModalVisible(true);
+            }}
+          >
+            <Text style={{ color: themeObject.colors.primary }}>+ {tLang('catalog.addStorage')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ИСТОРИЯ ЗАКАЗОВ */}
       {user && !isAdmin && (
         <View style={{ borderTopWidth: 1, borderTopColor: themeObject.colors.border, paddingTop: 20, marginBottom: 20 }}>
           <TouchableOpacity 
@@ -170,7 +316,7 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* УВЕДОМЛЕНИЯ (ТОЛЬКО ДЛЯ АДМИНА) */}
+      {/* УВЕДОМЛЕНИЯ */}
       {isAdmin && (
         <>
           <View style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: themeObject.colors.border, paddingTop: 20 }]}>
@@ -193,7 +339,7 @@ export default function SettingsScreen() {
             )}
           </View>
 
-          <Text style={{ color: themeObject.colors.secondaryText || '#666', fontSize: 12, marginTop: 8 }}>
+          <Text style={{ color: themeObject.colors.secondaryText || '#666', fontSize: 12, marginTop: 8, marginBottom: 30 }}>
             {tLang('settings.notificationDesc', { time: formatTime(notificationTime) })}
           </Text>
 
@@ -208,6 +354,18 @@ export default function SettingsScreen() {
         onClose={() => setIsAuthModalVisible(false)} 
         themeObject={themeObject} 
         onAuthSuccess={(newUser) => setUser(newUser)} 
+      />
+
+      <InfrastructureModal
+        visible={infraModalVisible}
+        onClose={() => setInfraModalVisible(false)}
+        type={infraType}
+        item={editingInfraItem}
+        onSave={handleSaveInfra}
+        onDelete={handleDeleteInfra}
+        themeObject={themeObject}
+        tLang={tLang}
+        cities={cities}
       />
     </ScrollView>
   );
@@ -233,5 +391,20 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     padding: 15, 
     borderRadius: 12 
+  },
+  infraItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  addButton: {
+    marginTop: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    alignItems: 'center',
   }
 });

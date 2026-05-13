@@ -7,6 +7,8 @@ export const useCatalogForm = () => {
   const [formCategory, setFormCategory] = useState(null);
   const [formPicture, setFormPicture] = useState(null);
   const [formBrand, setFormBrand] = useState(null);
+  const [formStorage, setFormStorage] = useState(null);
+  const [formAmount, setFormAmount] = useState('100');
 
   const resetForm = () => {
     setFormName('');
@@ -15,6 +17,8 @@ export const useCatalogForm = () => {
     setFormCategory(null);
     setFormPicture(null);
     setFormBrand(null);
+    setFormStorage(null);
+    setFormAmount('100');
   };
 
   return {
@@ -30,6 +34,10 @@ export const useCatalogForm = () => {
     setFormPicture,
     resetForm,
     formBrand, 
-    setFormBrand
+    setFormBrand,
+    formStorage,
+    setFormStorage,
+    formAmount,
+    setFormAmount
   };
 };

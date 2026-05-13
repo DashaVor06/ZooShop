@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   Modal,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -42,12 +43,19 @@ export const RenderModal = (props) => {
     brandsList = [],
     formBrand,
     setFormBrand,
+    storagesList = [],
+    formStorage,
+    setFormStorage,
+    formAmount,
+    setFormAmount,
   } = props;
 
   const [categoryItems, setCategoryItems] = useState([]);
   const [brandItems, setBrandItems] = useState([]);
+  const [storageItems, setStorageItems] = useState([]);
   const [isManualCategory, setIsManualCategory] = useState(false);
   const [isManualBrand, setIsManualBrand] = useState(false);
+  const [isManualStorage, setIsManualStorage] = useState(false);
   const isVisible = isEdit ? editModalVisible : modalVisible;
 
   useEffect(() => {
@@ -58,8 +66,11 @@ export const RenderModal = (props) => {
       if (brandsList?.length > 0) { // Подготовка списка брендов
         setBrandItems(brandsList.map(b => ({ label: b.br_name, value: b.br_id })));
       }
+      if (storagesList?.length > 0) {
+        setStorageItems(storagesList.map(s => ({ label: s.st_address || `Склад ${s.st_d}`, value: s.st_d })));
+      }
     }
-  }, [animalsList, brandsList, isVisible]);
+  }, [animalsList, brandsList, storagesList, isVisible]);
 
   if (!isVisible) return null;
 
@@ -67,6 +78,7 @@ export const RenderModal = (props) => {
   const handleSaveWithManualCheck = async () => {
     let finalCategoryId = formCategory;
     let finalBrandId = formBrand;
+    let finalStorageId = formStorage;
 
     // Валидация обязательных полей
     if (!formName?.trim()) {
@@ -100,18 +112,25 @@ export const RenderModal = (props) => {
         finalBrandId = newBrand.br_id;
       }
 
-      // 3. Вызываем основное сохранение с полученными ID
+      // 3. Если включен ручной ввод склада
+      if (isManualStorage && typeof formStorage === 'string' && formStorage.trim() !== '') {
+        const newStorage = await props.createStorage({ st_address: formStorage.trim() });
+        finalStorageId = newStorage.st_d;
+      }
+
+      // 4. Вызываем основное сохранение с полученными ID
       if (isEdit) {
-        await handleUpdateItem(finalCategoryId, finalBrandId);
+        await handleUpdateItem(finalCategoryId, finalBrandId, finalStorageId);
       } else {
-        await handleAddItem(finalCategoryId, finalBrandId);
+        await handleAddItem(finalCategoryId, finalBrandId, finalStorageId);
       }
       
       // Сбрасываем флаги ручного ввода после успеха
       setIsManualCategory(false);
       setIsManualBrand(false);
+      setIsManualStorage(false);
     } catch (error) {
-      console.error("Ошибка при создании новых категорий:", error);
+      console.error("Ошибка при сохранении:", error);
       if (showNotification) showNotification(tLang("catalog.saveError"), "error");
     }
   };
@@ -176,12 +195,12 @@ export const RenderModal = (props) => {
   return (
     <Modal
       animationType="slide"
-      transparent={true}
+      transparent={false}
       visible={isVisible}
       onRequestClose={handleClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: themeObject.colors.background }]}>
+      <View style={[styles.container, { backgroundColor: themeObject.colors.background }]}>
+        <ScrollView contentContainerStyle={{ padding: 20 }}>
           
           {/* Заголовок */}
           <Text style={[styles.modalTitle, { color: themeObject.colors.text }]}>
@@ -232,6 +251,36 @@ export const RenderModal = (props) => {
             <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
               {tLang("catalog.noCategoriesAvailable")}
             </Text>
+          )}
+
+          {storageItems.length > 0 ? (
+            <SimplePicker
+              selectedValue={formStorage}
+              onValueChange={setFormStorage}
+              placeholder={tLang("order.selectStorage") || "Выберите склад"}
+              themeObject={themeObject}
+              items={storageItems}
+            />
+          ) : (
+            <Text style={{ color: themeObject.colors.error || "red", marginBottom: 10 }}>
+              {tLang("catalog.noStoragesAvailable") || "Нет доступных складов. Добавьте их в настройках."}
+            </Text>
+          )}
+
+          {/* Поле: Количество на складе */}
+          {formStorage && (
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: themeObject.colors.inputBackground, 
+                color: themeObject.colors.text, 
+                borderColor: themeObject.colors.border 
+              }]}
+              placeholder={tLang("catalog.amountPlaceholder") || "Количество на складе"}
+              placeholderTextColor={themeObject.colors.placeholder}
+              value={formAmount}
+              onChangeText={setFormAmount}
+              keyboardType="numeric"
+            />
           )}
 
           {/* Поле: Описание */}
@@ -305,7 +354,7 @@ export const RenderModal = (props) => {
             </TouchableOpacity>
           </View>
           
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );

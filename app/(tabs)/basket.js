@@ -16,7 +16,7 @@ export default function BasketScreen() {
   const { tLang } = useLanguageSelector();
   const { userProfile, isAdmin } = useUserRole();
   const router = useRouter();
-  const { fetchAllOrders, fetchStatuses, updateOrderStatus } = supabaseOrderService();
+  const { fetchAllOrders, fetchStatuses, updateOrderStatus, fetchStorages, updateOrderStorage } = supabaseOrderService();
   
   const { cart, updateCartItem, fetchCart } = useCart();
   const [selectedIds, setSelectedIds] = useState([]);
@@ -25,7 +25,10 @@ export default function BasketScreen() {
   // ADMIN STATE
   const [allOrders, setAllOrders] = useState([]);
   const [statuses, setStatuses] = useState([]);
+  const [storages, setStorages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orderModalVisible, setOrderModalVisible] = useState(false);
 
   // PROMOTIONS STATE
   const [promotions, setPromotions] = useState([]);
@@ -53,12 +56,14 @@ export default function BasketScreen() {
 
   const loadAdminData = async () => {
     setLoading(true);
-    const [ordersData, statusesData] = await Promise.all([
+    const [ordersData, statusesData, storagesData] = await Promise.all([
       fetchAllOrders(),
-      fetchStatuses()
+      fetchStatuses(),
+      fetchStorages()
     ]);
     setAllOrders(ordersData);
     setStatuses(statusesData);
+    setStorages(storagesData);
     setLoading(false);
   };
 
@@ -74,10 +79,32 @@ export default function BasketScreen() {
   const handleStatusChange = async (orderId, newStatusId) => {
     const { success } = await updateOrderStatus(orderId, newStatusId);
     if (success) {
-      loadAdminData(); // Refresh list
+      const updatedOrders = await fetchAllOrders();
+      setAllOrders(updatedOrders);
+      if (selectedOrder?.ord_id === orderId) {
+        setSelectedOrder(updatedOrders.find(o => o.ord_id === orderId));
+      }
     } else {
       Alert.alert(tLang("common.error"), tLang("catalog.updateError"));
     }
+  };
+
+  const handleStorageChange = async (orderId, newStorageId) => {
+    const { success } = await updateOrderStorage(orderId, newStorageId);
+    if (success) {
+      const updatedOrders = await fetchAllOrders();
+      setAllOrders(updatedOrders);
+      if (selectedOrder?.ord_id === orderId) {
+        setSelectedOrder(updatedOrders.find(o => o.ord_id === orderId));
+      }
+    } else {
+      Alert.alert(tLang("common.error"), tLang("catalog.updateError"));
+    }
+  };
+
+  const openOrderDetails = (order) => {
+    setSelectedOrder(order);
+    setOrderModalVisible(true);
   };
 
   const handleCheckout = () => {
@@ -165,13 +192,88 @@ export default function BasketScreen() {
     );
   };
 
+  const renderAdminOrderDetailsModal = () => {
+    if (!selectedOrder) return null;
+
+    const currentStatusId = Array.isArray(selectedOrder.orders_m2m_statuses) 
+      ? selectedOrder.orders_m2m_statuses[0]?.os_stat_id 
+      : selectedOrder.orders_m2m_statuses?.os_stat_id;
+
+    return (
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: themeObject.colors.background, width: '100%', borderRadius: 12, padding: 20, maxHeight: '80%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', color: themeObject.colors.text }}>{tLang("order.details")} #{selectedOrder.ord_id}</Text>
+              <TouchableOpacity onPress={() => setOrderModalVisible(false)}>
+                <Ionicons name="close" size={24} color={themeObject.colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={[]}
+              ListEmptyComponent={
+                <View>
+                  <Text style={{ color: themeObject.colors.text, marginBottom: 8 }}><Text style={{ fontWeight: 'bold' }}>{tLang("order.customer")}:</Text> {selectedOrder.accounts?.acc_email}</Text>
+                  <Text style={{ color: themeObject.colors.text, marginBottom: 8 }}><Text style={{ fontWeight: 'bold' }}>{tLang("order.shop")}:</Text> {selectedOrder.shops?.cities?.c_name}, {selectedOrder.shops?.sh_address}</Text>
+                  <Text style={{ color: themeObject.colors.text, marginBottom: 8 }}><Text style={{ fontWeight: 'bold' }}>{tLang("order.paymentMethod")}:</Text> {selectedOrder.payment_methods?.pm_name}</Text>
+                  
+                  <Text style={{ color: themeObject.colors.text, marginTop: 15, fontWeight: 'bold' }}>{tLang("order.status")}:</Text>
+                  <View style={[styles.pickerContainer, { backgroundColor: themeObject.colors.surface || '#eee', borderColor: themeObject.colors.border }]}>
+                    <Picker
+                      selectedValue={currentStatusId}
+                      onValueChange={(val) => handleStatusChange(selectedOrder.ord_id, val)}
+                      dropdownIconColor={themeObject.colors.primary}
+                      style={{ color: themeObject.colors.text, height: 50 }}
+                    >
+                      {statuses.map(s => <Picker.Item key={s.stat_id} label={s.stat_name} value={s.stat_id} />)}
+                    </Picker>
+                  </View>
+
+                  <Text style={{ color: themeObject.colors.text, marginTop: 15, fontWeight: 'bold' }}>{tLang("order.selectStorage")}:</Text>
+                  <View style={[styles.pickerContainer, { backgroundColor: themeObject.colors.surface || '#eee', borderColor: themeObject.colors.border }]}>
+                    <Picker
+                      selectedValue={selectedOrder.ord_st_id}
+                      onValueChange={(val) => handleStorageChange(selectedOrder.ord_id, val)}
+                      dropdownIconColor={themeObject.colors.primary}
+                      style={{ color: themeObject.colors.text, height: 50 }}
+                    >
+                      <Picker.Item label={tLang("order.selectStorage")} value={null} />
+                      {storages.map(s => <Picker.Item key={s.st_d} label={s.st_address || `Склад ${s.st_d}`} value={s.st_d} />)}
+                    </Picker>
+                  </View>
+
+                  <Text style={{ color: themeObject.colors.text, marginTop: 20, fontWeight: 'bold', fontSize: 16 }}>{tLang("order.items")}:</Text>
+                  {selectedOrder.orders_m2m_items?.map((item, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+                      <Text style={{ color: themeObject.colors.text, flex: 1 }}>{item.items?.it_name} x{item.oi_amount}</Text>
+                      <Text style={{ color: themeObject.colors.text }}>{(item.items?.it_price * item.oi_amount).toFixed(2)} Br</Text>
+                    </View>
+                  ))}
+
+                  <View style={{ borderTopWidth: 1, borderTopColor: themeObject.colors.border, marginTop: 15, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ fontWeight: 'bold', color: themeObject.colors.text }}>{tLang("order.total")}:</Text>
+                    <Text style={{ fontWeight: 'bold', color: themeObject.colors.primary, fontSize: 18 }}>{Number(selectedOrder.ord_final_sum).toFixed(2)} Br</Text>
+                  </View>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   const renderAdminOrder = ({ item }) => {
     const statusId = Array.isArray(item.orders_m2m_statuses) 
       ? item.orders_m2m_statuses[0]?.os_stat_id 
       : item.orders_m2m_statuses?.os_stat_id;
 
     return (
-      <View style={[styles.card, { backgroundColor: themeObject.colors.card, flexDirection: 'column', alignItems: 'stretch' }]}>
+      <TouchableOpacity 
+        onPress={() => openOrderDetails(item)}
+        style={[styles.card, { backgroundColor: themeObject.colors.card, flexDirection: 'column', alignItems: 'stretch' }]}
+      >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
           <Text style={{ color: themeObject.colors.text, fontWeight: 'bold' }}>#{item.ord_id}</Text>
           <Text style={{ color: themeObject.colors.primary, fontWeight: 'bold' }}>{Number(item.ord_final_sum).toFixed(2)} Br</Text>
@@ -198,7 +300,7 @@ export default function BasketScreen() {
             ))}
           </Picker>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -225,6 +327,7 @@ export default function BasketScreen() {
         <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: themeObject.colors.border }}>
           <Text style={{ fontSize: 20, fontWeight: 'bold', color: themeObject.colors.text }}>{tLang('order.management')}</Text>
         </View>
+        {orderModalVisible && renderAdminOrderDetailsModal()}
         {loading ? (
           <View style={styles.center}><ActivityIndicator size="large" color={themeObject.colors.primary} /></View>
         ) : (

@@ -30,6 +30,7 @@ import { supabaseBrandService } from "../../../src/viewModel/services/supabaseBr
 import { supabaseCharacteristicService } from "../../../src/viewModel/services/supabaseCharacteristicService";
 import { supabasePromotionService } from "../../../src/viewModel/services/supabasePromotionService";
 import { supabaseService } from "../../../src/viewModel/services/supabaseService";
+import { supabaseOrderService } from "../../../src/viewModel/services/supabaseOrderService";
 
 import { useCart } from "../../../src/viewModel/providers/cartProvider";
 
@@ -50,7 +51,7 @@ export default function CatalogScreen() {
 
   const {
     items, loading, refreshing, pendingSync, loadItems, onRefresh,
-    addItem, updateItem, deleteItem,
+    addItem, updateItem, deleteItem, fetchItemStorages
   } = supabaseService(db);
 
   const { loadImage } = imagekitService();
@@ -58,6 +59,9 @@ export default function CatalogScreen() {
   const { brands, addBrand, deleteBrand } = supabaseBrandService(db);
   const { characteristicValues, m2mCharacteristics, deleteSubcategory } = supabaseCharacteristicService(db);
   const { promotions } = supabasePromotionService(db);
+  const { fetchStorages, createStorage } = supabaseOrderService();
+
+  const [storages, setStorages] = useState([]);
   const [selectedFilterId, setSelectedFilterId] = useState(null); // Для брендов или финала
   const [selectedAnimalId, setSelectedAnimalId] = useState(null);
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState(null);
@@ -79,7 +83,8 @@ export default function CatalogScreen() {
   const {
     formName, setFormName, formDescription, setFormDescription,
     formPrice, setFormPrice, formPicture, setFormPicture,
-    formCategory, setFormCategory, resetForm, formBrand, setFormBrand
+    formCategory, setFormCategory, resetForm, formBrand, setFormBrand,
+    formStorage, setFormStorage, formAmount, setFormAmount
   } = useCatalogForm();
 
   const handleItemPress = (item) => {
@@ -91,6 +96,8 @@ export default function CatalogScreen() {
     const init = async () => {
       await initAnimalsTable(db);
       loadItems();
+      const storData = await fetchStorages();
+      setStorages(storData || []);
     };
     init();
   }, []);
@@ -131,12 +138,13 @@ export default function CatalogScreen() {
     setTimeout(() => setNotification({ visible: false, message: "", type: "" }), 3000);
   };
 
-  const handleAddItem = async (finalCatId, finalBrId) => {
+  const handleAddItem = async (finalCatId, finalBrId, finalStorId) => {
     try {
       const uri = typeof formPicture === "string" ? formPicture : formPicture?.uri;
       
       const catId = finalCatId !== undefined ? finalCatId : formCategory;
       const brId = finalBrId !== undefined ? finalBrId : formBrand;
+      const storId = finalStorId !== undefined ? finalStorId : formStorage;
 
       await addItem({
         it_name: formName,
@@ -146,7 +154,7 @@ export default function CatalogScreen() {
         it_image_file_id: null,
         it_an_id: catId,
         it_br_id: brId,
-      });
+      }, storId, formAmount);
 
       resetForm();
       setModalVisible(false);
@@ -157,13 +165,14 @@ export default function CatalogScreen() {
     }
   };
 
-  const handleUpdateItem = async (finalCatId, finalBrId) => {
+  const handleUpdateItem = async (finalCatId, finalBrId, finalStorId) => {
     if (!currentItem) return;
     try {
       const uri = typeof formPicture === "string" ? formPicture : formPicture?.url || formPicture?.uri;
       
       const catId = finalCatId !== undefined ? finalCatId : formCategory;
       const brId = finalBrId !== undefined ? finalBrId : formBrand;
+      const storId = finalStorId !== undefined ? finalStorId : formStorage;
 
       await updateItem({
         it_id: currentItem.it_id,
@@ -174,7 +183,7 @@ export default function CatalogScreen() {
         it_image_file_id: (uri === currentItem.it_image_url) ? currentItem.it_image_file_id : null,
         it_an_id: catId,
         it_br_id: brId,
-      });
+      }, storId, formAmount);
 
       resetForm();
       setEditModalVisible(false);
@@ -415,7 +424,7 @@ export default function CatalogScreen() {
             toggleExpand={(id) =>
               setExpandedId(expandedId === id ? null : id)
             }
-            openEditModal={(item) => {
+            openEditModal={async (item) => {
               setCurrentItem(item);
               setFormName(item.it_name);
               setFormDescription(item.it_description);
@@ -430,6 +439,16 @@ export default function CatalogScreen() {
               );
               setFormCategory(item.it_an_id);
               setFormBrand(item.it_br_id);
+
+              const itemStorages = await fetchItemStorages(item.it_id);
+              if (itemStorages && itemStorages.length > 0) {
+                setFormStorage(itemStorages[0].st_id);
+                setFormAmount(itemStorages[0].amount?.toString() || "0");
+              } else {
+                setFormStorage(null);
+                setFormAmount("0");
+              }
+
               setEditModalVisible(true);
             }}
             confirmDelete={(id) => {
@@ -471,6 +490,12 @@ export default function CatalogScreen() {
             brandsList={brands}       // Передаем список брендов из сервиса
             formBrand={formBrand}     // Нужен новый хук useCatalogForm (см. ниже)
             setFormBrand={setFormBrand}
+            storagesList={storages}
+            formStorage={formStorage}
+            setFormStorage={setFormStorage}
+            formAmount={formAmount}
+            setFormAmount={setFormAmount}
+            createStorage={createStorage}
           />
           <RenderModal
             isEdit={true}
@@ -493,6 +518,12 @@ export default function CatalogScreen() {
             brandsList={brands}       // Передаем список брендов из сервиса
             formBrand={formBrand}     // Нужен новый хук useCatalogForm (см. ниже)
             setFormBrand={setFormBrand}
+            storagesList={storages}
+            formStorage={formStorage}
+            setFormStorage={setFormStorage}
+            formAmount={formAmount}
+            setFormAmount={setFormAmount}
+            createStorage={createStorage}
           />
           {renderConfirmModal({ 
             confirmModalVisible, 

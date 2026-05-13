@@ -17,11 +17,13 @@ export const SimplePicker = ({
   return (
     <View style={{ marginBottom: 12 }}>
       {/* Кнопка переключения режима */}
-      <TouchableOpacity onPress={() => setIsManual(!isManual)} style={{ marginBottom: 5 }}>
-        <Text style={{ color: themeObject.colors.primary, fontSize: 12 }}>
-          {isManual ? "Выбрать из списка" : "Ввести новое значение"}
-        </Text>
-      </TouchableOpacity>
+      {setIsManual && (
+        <TouchableOpacity onPress={() => setIsManual(!isManual)} style={{ marginBottom: 5 }}>
+          <Text style={{ color: themeObject.colors.primary, fontSize: 12 }}>
+            {isManual ? "Выбрать из списка" : "Ввести новое значение"}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {isManual ? (
         <TextInput

@@ -62,7 +62,7 @@ export const supabaseService = (db) => {
   }, [db, isConnected, loadItems]);
 
   // --- SYNC (PUSH + PULL) ---
-  const syncWithServer = useCallback(async () => {
+  const syncWithServer = useCallback(async (targetStorageId = null, targetAmount = null) => {
     if (!isConnected || syncLock.current) return;
     
     const { data: { session } } = await supabase.auth.getSession();
@@ -77,6 +77,8 @@ export const supabaseService = (db) => {
       const toDelete = localItems.filter((i) => Number(i.it_deleted) === 1);
       for (const item of toDelete) {
         if (!item.it_id.toString().startsWith("local_")) {
+          // Cleanup m2m storage before deleting item
+          await supabase.from("storages_m2m_items").delete().eq("si_it_id", item.it_id);
           await supabase.from("items").delete().eq("it_id", item.it_id);
           if (item.it_image_file_id) await deleteImageFromImageKit(item.it_image_file_id).catch(() => {});
         }
@@ -107,31 +109,52 @@ export const supabaseService = (db) => {
             it_br_id: item.it_br_id
           };
 
+          let finalItId = item.it_id;
+
           if (item.it_id.toString().startsWith("local_")) {
             console.log("Attempting insert for admin:", item.it_name);
             const { data, error, status } = await supabase.from("items").insert([payload]).select();
             
-            if (error) {
-              console.error("Supabase Sync Detail:", {
-                message: error.message,
-                code: error.code,
-                status: status,
-                hint: error.hint
-              });
-              throw error;
-            }
+            if (error) throw error;
             
             if (data?.[0]) {
+              finalItId = data[0].it_id;
               await deleteItemById(db, item.it_id);
-              await insertItem(db, { ...item, it_id: data[0].it_id, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
-              console.log("Successfully synced & replaced local ID:", data[0].it_id);
-            } else {
-              console.warn("Item might be inserted but not readable (RLS). Status:", status);
+              await insertItem(db, { ...item, it_id: finalItId, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
+              console.log("Successfully synced & replaced local ID:", finalItId);
             }
           } else {
             const { error } = await supabase.from("items").update(payload).eq("it_id", item.it_id);
             if (error) throw error;
             await updateItemById(db, { ...item, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
+          }
+
+          // Handle storage link if provided
+          if (targetStorageId) {
+            const amountToSave = targetAmount !== null ? parseInt(targetAmount) : 0;
+            
+            // First check if already exists
+            const { data: existingStock } = await supabase
+              .from("storages_m2m_items")
+              .select("*")
+              .eq("si_it_id", finalItId)
+              .eq("si_st_id", targetStorageId);
+            
+            if (!existingStock || existingStock.length === 0) {
+              await supabase
+                .from("storages_m2m_items")
+                .insert([{ 
+                  si_it_id: finalItId, 
+                  si_st_id: targetStorageId, 
+                  si_amount: amountToSave 
+                }]);
+            } else {
+              await supabase
+                .from("storages_m2m_items")
+                .update({ si_amount: amountToSave })
+                .eq("si_it_id", finalItId)
+                .eq("si_st_id", targetStorageId);
+            }
           }
         } catch (itemError) {
           console.error(`Failed to sync item ${item.it_id}:`, itemError);
@@ -149,6 +172,20 @@ export const supabaseService = (db) => {
       loadItems();
     }
   }, [isConnected, db, loadItems, uploadToImageKit, deleteImageFromImageKit, pullFromServer]);
+
+  const fetchItemStorages = async (itemId) => {
+    try {
+      const { data, error } = await supabase
+        .from("storages_m2m_items")
+        .select("si_st_id, si_amount")
+        .eq("si_it_id", itemId);
+      if (error) throw error;
+      return data.map(d => ({ st_id: d.si_st_id, amount: d.si_amount }));
+    } catch (e) {
+      console.error("fetchItemStorages Error:", e);
+      return [];
+    }
+  };
 
   // --- REAL-TIME: Мгновенные обновления ---
   useEffect(() => {
@@ -183,17 +220,22 @@ export const supabaseService = (db) => {
   }, [isConnected]);
 
   // --- Методы UI ---
-  const addItem = async (item) => {
+  const addItem = async (item, storageId, amount) => {
     const newItem = { it_id: `local_${Date.now()}`, ...item, it_synced: 0, it_deleted: 0 };
     await insertItem(db, newItem);
+    
+    // If we have a storage selection, we might want to store it locally too or just push to supabase
+    // For now, since local DB doesn't have m2m_storages, we'll rely on syncWithServer to handle it if possible.
+    // Or we just pass it to syncWithServer.
+    
     await loadItems();
-    if (isConnected) syncWithServer();
+    if (isConnected) syncWithServer(storageId, amount);
   };
 
-  const updateItem = async (item) => {
+  const updateItem = async (item, storageId, amount) => {
     await updateItemById(db, { ...item, it_synced: 0 });
     await loadItems();
-    if (isConnected) syncWithServer();
+    if (isConnected) syncWithServer(storageId, amount);
   };
 
   const deleteItem = async (id) => {
@@ -211,5 +253,5 @@ export const supabaseService = (db) => {
     setRefreshing(false);
   }, [isConnected, syncWithServer, loadItems]);
 
-  return { items, loading, refreshing, pendingSync, loadItems, onRefresh, addItem, updateItem, deleteItem };
+  return { items, loading, refreshing, pendingSync, loadItems, onRefresh, addItem, updateItem, deleteItem, fetchItemStorages };
 };
