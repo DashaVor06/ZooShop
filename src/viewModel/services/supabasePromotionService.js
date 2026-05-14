@@ -57,7 +57,10 @@ export const supabasePromotionService = (db) => {
         .insert(promoData)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        alert(error.message);
+        throw error;
+      }
       await insertPromotion(db, data);
       setPromotions((prev) => [...prev, data]);
       return data;
@@ -76,7 +79,10 @@ export const supabasePromotionService = (db) => {
         .eq("pr_id", promoData.pr_id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        alert(error.message);
+        throw error;
+      }
       await updatePromotionById(db, data);
       setPromotions((prev) => prev.map(p => p.pr_id === data.pr_id ? data : p));
       return data;

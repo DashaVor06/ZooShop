@@ -125,7 +125,10 @@ export const supabaseService = (db) => {
             }
           } else {
             const { error } = await supabase.from("items").update(payload).eq("it_id", item.it_id);
-            if (error) throw error;
+            if (error) {
+              alert(`Ошибка обновления "${item.it_name}": ${error.message}`);
+              throw error;
+            }
             await updateItemById(db, { ...item, it_image_url: imageUrl, it_image_file_id: fileId, it_synced: 1 });
           }
 

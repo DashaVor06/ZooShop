@@ -1,6 +1,3 @@
-
-
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -12,44 +9,141 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
-
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
-
+-- =====================================================
+-- РАСШИРЕНИЯ
+-- =====================================================
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
-
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "postgis" WITH SCHEMA "extensions";
-
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
-
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
+-- =====================================================
+-- ХРАНИМЫЕ ПРОЦЕДУРЫ
+-- =====================================================
+
+CREATE PROCEDURE "public"."accrue_bonuses_after_success"(IN "p_order_id" bigint)
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    v_acc_id uuid;
+    v_final_sum numeric;
+    v_bonus_to_add integer;
+BEGIN
+    SELECT ord_acc_id, ord_final_sum INTO v_acc_id, v_final_sum 
+    FROM public.orders WHERE ord_id = p_order_id;
+
+    v_bonus_to_add := FLOOR(v_final_sum * 0.05);
+
+    UPDATE public.accounts
+    SET acc_bonus_balance = acc_bonus_balance + v_bonus_to_add
+    WHERE acc_id = v_acc_id;
+END;
+$$;
+
+ALTER PROCEDURE "public"."accrue_bonuses_after_success"(IN "p_order_id" bigint) OWNER TO "postgres";
 
 
+CREATE PROCEDURE "public"."cancel_order"(IN "p_order_id" bigint)
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    v_acc_id uuid;
+    v_st_id smallint;
+    v_bonuses_used integer;
+    v_status_id_cancelled smallint;
+BEGIN
+    SELECT stat_id INTO v_status_id_cancelled
+    FROM public.statuses
+    WHERE stat_name = 'Отменен';
 
+    IF v_status_id_cancelled IS NULL THEN
+        RAISE EXCEPTION 'Статус "Отменен" не найден в таблице public.statuses';
+    END IF;
+
+    SELECT ord_acc_id, ord_st_id, ord_bonuses_used
+    INTO v_acc_id, v_st_id, v_bonuses_used
+    FROM public.orders 
+    WHERE ord_id = p_order_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Заказ с ID % не найден', p_order_id;
+    END IF;
+
+    UPDATE public.storages_m2m_items si
+    SET si_amount = si.si_amount + oi.oi_amount
+    FROM public.orders_m2m_items oi
+    WHERE oi.oi_ord_id = p_order_id
+      AND si.si_it_id = oi.oi_it_id
+      AND si.si_st_id = v_st_id;
+
+    UPDATE public.accounts
+    SET acc_bonus_balance = acc_bonus_balance + v_bonuses_used
+    WHERE acc_id = v_acc_id;
+
+    UPDATE public.orders 
+    SET ord_st_id = v_status_id_cancelled 
+    WHERE ord_id = p_order_id;
+END;
+$$;
+
+ALTER PROCEDURE "public"."cancel_order"(IN "p_order_id" bigint) OWNER TO "postgres";
+
+
+CREATE PROCEDURE "public"."reduce_storage_after_checkout"(IN "p_order_id" bigint)
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    v_st_id smallint;
+    item_record RECORD;
+BEGIN
+    SELECT ord_st_id INTO v_st_id FROM public.orders WHERE ord_id = p_order_id;
+
+    FOR item_record IN
+        SELECT oi_it_id, oi_amount FROM public.orders_m2m_items WHERE oi_ord_id = p_order_id
+    LOOP
+        UPDATE public.storages_m2m_items
+        SET si_amount = si_amount - item_record.oi_amount
+        WHERE si_st_id = v_st_id AND si_it_id = item_record.oi_it_id;
+    END LOOP;
+END;
+$$;
+
+ALTER PROCEDURE "public"."reduce_storage_after_checkout"(IN "p_order_id" bigint) OWNER TO "postgres";
+
+-- =====================================================
+-- ФУНКЦИИ
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION "public"."check_discount_percentage"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    IF NEW.pr_discount_percentage < 0 OR NEW.pr_discount_percentage > 100 THEN
+        RAISE EXCEPTION 'Процент скидки должен быть от 0 до 100';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION "public"."check_discount_percentage"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."check_item_price"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    IF NEW.it_price < 0 THEN
+        RAISE EXCEPTION 'Цена товара не может быть отрицательной';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION "public"."check_item_price"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."copy_user_to_accounts"() RETURNS "trigger"
@@ -58,15 +152,10 @@ CREATE OR REPLACE FUNCTION "public"."copy_user_to_accounts"() RETURNS "trigger"
     AS $$
 BEGIN
     INSERT INTO public.accounts (acc_id, acc_email, acc_r_id)
-    VALUES (
-        NEW.id,        -- используем NEW.id, а не NEW.UID (в auth.users поле называется id)
-        NEW.email,     -- копируем email из auth.users в acc_email
-        2              -- присваиваем значение 2 для acc_r_id
-    );
+    VALUES (NEW.id, NEW.email, 2);
     RETURN NEW;
 END;
 $$;
-
 
 ALTER FUNCTION "public"."copy_user_to_accounts"() OWNER TO "postgres";
 
@@ -84,13 +173,42 @@ CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
     END;
     $$;
 
-
 ALTER FUNCTION "public"."is_admin"() OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."on_auth_user_created"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+    INSERT INTO public.accounts (acc_id, acc_email, acc_r_id, acc_bonus_balance)
+    VALUES (NEW.id, NEW.email, 2, 0);
+    RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION "public"."on_auth_user_created"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."validate_promotion_dates"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    IF NEW.pr_end_date IS NOT NULL AND NEW.pr_start_date > NEW.pr_end_date THEN
+        RAISE EXCEPTION 'Ошибка дат: дата начала (%) не может быть позже даты окончания (%)',
+            NEW.pr_start_date, NEW.pr_end_date;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION "public"."validate_promotion_dates"() OWNER TO "postgres";
+
+-- =====================================================
+-- ТАБЛИЦЫ
+-- =====================================================
+
 SET default_tablespace = '';
-
 SET default_table_access_method = "heap";
-
 
 CREATE TABLE IF NOT EXISTS "public"."accounts" (
     "acc_id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -99,100 +217,52 @@ CREATE TABLE IF NOT EXISTS "public"."accounts" (
     "acc_bonus_balance" integer DEFAULT 0 NOT NULL
 );
 
-
-ALTER TABLE "public"."accounts" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."accounts_m2m_items" (
     "ai_acc_id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ai_it_id" bigint NOT NULL,
     "ai_amount" integer NOT NULL
 );
 
-
-ALTER TABLE "public"."accounts_m2m_items" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."animals" (
     "an_id" smallint NOT NULL,
     "an_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."animals" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."animals" ALTER COLUMN "an_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."animals_an_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."brands" (
     "br_id" integer NOT NULL,
     "br_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."brands" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."brands" ALTER COLUMN "br_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."brands_br_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."characteristic_values" (
     "cv_id" integer NOT NULL,
     "cv_value" "text" NOT NULL,
-    "cv_an_id" smallint NOT NULL
+    "cv_an_id" smallint
 );
-
-
-ALTER TABLE "public"."characteristic_values" OWNER TO "postgres";
-
 
 ALTER TABLE "public"."characteristic_values" ALTER COLUMN "cv_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."characteristic_values_cv_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."cities" (
     "c_id" smallint NOT NULL,
     "c_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."cities" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."cities" ALTER COLUMN "c_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."cities_c_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."items" (
     "it_id" bigint NOT NULL,
@@ -205,29 +275,15 @@ CREATE TABLE IF NOT EXISTS "public"."items" (
     "it_br_id" integer NOT NULL
 );
 
-
-ALTER TABLE "public"."items" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."items" ALTER COLUMN "it_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."items_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."items_m2m_characteristic_values" (
     "icv_cv_id" integer NOT NULL,
     "icv_it_id" bigint NOT NULL
 );
-
-
-ALTER TABLE "public"."items_m2m_characteristic_values" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."orders" (
     "ord_id" bigint NOT NULL,
@@ -241,9 +297,10 @@ CREATE TABLE IF NOT EXISTS "public"."orders" (
     "ord_items_sum" numeric DEFAULT 0 NOT NULL
 );
 
-
-ALTER TABLE "public"."orders" OWNER TO "postgres";
-
+ALTER TABLE "public"."orders" ALTER COLUMN "ord_id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."orders_ord_id_seq"
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
+);
 
 CREATE TABLE IF NOT EXISTS "public"."orders_m2m_items" (
     "oi_it_id" bigint NOT NULL,
@@ -251,20 +308,10 @@ CREATE TABLE IF NOT EXISTS "public"."orders_m2m_items" (
     "oi_amount" integer NOT NULL
 );
 
-
-ALTER TABLE "public"."orders_m2m_items" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."orders_m2m_items" ALTER COLUMN "oi_it_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."orders_m2m_items_oi_it_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."orders_m2m_statuses" (
     "os_ord_id" bigint NOT NULL,
@@ -272,51 +319,20 @@ CREATE TABLE IF NOT EXISTS "public"."orders_m2m_statuses" (
     "os_date" timestamp with time zone NOT NULL
 );
 
-
-ALTER TABLE "public"."orders_m2m_statuses" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."orders_m2m_statuses" ALTER COLUMN "os_ord_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."orders_m2m_statuses_os_ord_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
-
-ALTER TABLE "public"."orders" ALTER COLUMN "ord_id" ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME "public"."orders_ord_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."payment_methods" (
     "pm_id" smallint NOT NULL,
     "pm_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."payment_methods" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."payment_methods" ALTER COLUMN "pm_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."payment_methods_pm_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."promotions" (
     "pr_id" bigint NOT NULL,
@@ -324,43 +340,24 @@ CREATE TABLE IF NOT EXISTS "public"."promotions" (
     "pr_end_date" "date",
     "pr_discount_percentage" smallint NOT NULL,
     "pr_cv_id" integer,
-    "pr_br_id" integer
+    "pr_br_id" integer,
+    "pr_an_id" smallint
 );
-
-
-ALTER TABLE "public"."promotions" OWNER TO "postgres";
-
 
 ALTER TABLE "public"."promotions" ALTER COLUMN "pr_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."promotions_pr_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."roles" (
     "r_id" smallint NOT NULL,
     "r_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."roles" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."roles" ALTER COLUMN "r_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."roles_r_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."shops" (
     "sh_id" smallint NOT NULL,
@@ -369,40 +366,20 @@ CREATE TABLE IF NOT EXISTS "public"."shops" (
     "sh_location" "extensions"."geography"(Point,4326) NOT NULL
 );
 
-
-ALTER TABLE "public"."shops" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."shops" ALTER COLUMN "sh_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."shops_sh_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."statuses" (
     "stat_id" smallint NOT NULL,
     "stat_name" "text" NOT NULL
 );
 
-
-ALTER TABLE "public"."statuses" OWNER TO "postgres";
-
-
 ALTER TABLE "public"."statuses" ALTER COLUMN "stat_id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."statuses_st_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."storages" (
     "st_d" bigint NOT NULL,
@@ -411,9 +388,10 @@ CREATE TABLE IF NOT EXISTS "public"."storages" (
     "st_location" "extensions"."geography"(Point,4326) NOT NULL
 );
 
-
-ALTER TABLE "public"."storages" OWNER TO "postgres";
-
+ALTER TABLE "public"."storages" ALTER COLUMN "st_d" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."storages_st_d_seq"
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1
+);
 
 CREATE TABLE IF NOT EXISTS "public"."storages_m2m_items" (
     "si_st_id" bigint NOT NULL,
@@ -421,3317 +399,633 @@ CREATE TABLE IF NOT EXISTS "public"."storages_m2m_items" (
     "si_amount" integer NOT NULL
 );
 
-
-ALTER TABLE "public"."storages_m2m_items" OWNER TO "postgres";
-
-
-ALTER TABLE "public"."storages" ALTER COLUMN "st_d" ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME "public"."storages_st_d_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
+-- =====================================================
+-- ПЕРВИЧНЫЕ КЛЮЧИ
+-- =====================================================
 
 ALTER TABLE ONLY "public"."accounts_m2m_items"
     ADD CONSTRAINT "accounts_m2m_items_pkey" PRIMARY KEY ("ai_acc_id", "ai_it_id");
 
-
-
 ALTER TABLE ONLY "public"."accounts"
     ADD CONSTRAINT "accounts_pkey" PRIMARY KEY ("acc_id");
-
-
 
 ALTER TABLE ONLY "public"."animals"
     ADD CONSTRAINT "animals_pkey" PRIMARY KEY ("an_id");
 
-
-
 ALTER TABLE ONLY "public"."brands"
     ADD CONSTRAINT "brands_pkey" PRIMARY KEY ("br_id");
-
-
 
 ALTER TABLE ONLY "public"."characteristic_values"
     ADD CONSTRAINT "characteristic_values_pkey" PRIMARY KEY ("cv_id");
 
-
-
 ALTER TABLE ONLY "public"."cities"
     ADD CONSTRAINT "cities_pkey" PRIMARY KEY ("c_id");
-
-
 
 ALTER TABLE ONLY "public"."items_m2m_characteristic_values"
     ADD CONSTRAINT "items_m2m_characteristic_values_pkey" PRIMARY KEY ("icv_cv_id", "icv_it_id");
 
-
-
 ALTER TABLE ONLY "public"."items"
     ADD CONSTRAINT "items_pkey" PRIMARY KEY ("it_id");
-
-
 
 ALTER TABLE ONLY "public"."orders_m2m_items"
     ADD CONSTRAINT "orders_m2m_items_pkey" PRIMARY KEY ("oi_it_id", "oi_ord_id");
 
-
-
 ALTER TABLE ONLY "public"."orders_m2m_statuses"
     ADD CONSTRAINT "orders_m2m_statuses_pkey" PRIMARY KEY ("os_ord_id", "os_stat_id");
-
-
 
 ALTER TABLE ONLY "public"."orders"
     ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("ord_id");
 
-
-
 ALTER TABLE ONLY "public"."payment_methods"
     ADD CONSTRAINT "payment_methods_pkey" PRIMARY KEY ("pm_id");
-
-
 
 ALTER TABLE ONLY "public"."promotions"
     ADD CONSTRAINT "promotions_pkey" PRIMARY KEY ("pr_id");
 
-
-
 ALTER TABLE ONLY "public"."roles"
     ADD CONSTRAINT "roles_pkey" PRIMARY KEY ("r_id");
-
-
 
 ALTER TABLE ONLY "public"."shops"
     ADD CONSTRAINT "shops_pkey" PRIMARY KEY ("sh_id");
 
-
-
 ALTER TABLE ONLY "public"."statuses"
     ADD CONSTRAINT "statuses_pkey" PRIMARY KEY ("stat_id");
-
-
 
 ALTER TABLE ONLY "public"."storages_m2m_items"
     ADD CONSTRAINT "storages_m2m_items_pkey" PRIMARY KEY ("si_st_id", "si_it_id");
 
-
-
 ALTER TABLE ONLY "public"."storages"
     ADD CONSTRAINT "storages_pkey" PRIMARY KEY ("st_d");
 
+-- =====================================================
+-- ТРИГГЕРЫ
+-- =====================================================
 
+CREATE OR REPLACE TRIGGER "tr_check_item_price" 
+    BEFORE INSERT OR UPDATE ON "public"."items" 
+    FOR EACH ROW EXECUTE FUNCTION "public"."check_item_price"();
 
+CREATE OR REPLACE TRIGGER "tr_check_promo_dates" 
+    BEFORE INSERT OR UPDATE ON "public"."promotions" 
+    FOR EACH ROW EXECUTE FUNCTION "public"."validate_promotion_dates"();
+
+CREATE OR REPLACE TRIGGER "tr_check_promo_percent" 
+    BEFORE INSERT OR UPDATE ON "public"."promotions" 
+    FOR EACH ROW EXECUTE FUNCTION "public"."check_discount_percentage"();
+
+-- =====================================================
+-- ВНЕШНИЕ КЛЮЧИ (ОПТИМИЗИРОВАННЫЕ КАСКАДНЫЕ ОПЕРАЦИИ)
+-- =====================================================
+
+-- 1. accounts → roles (RESTRICT - безопасность)
 ALTER TABLE ONLY "public"."accounts"
-    ADD CONSTRAINT "accounts_acc_r_id_fkey" FOREIGN KEY ("acc_r_id") REFERENCES "public"."roles"("r_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "accounts_acc_r_id_fkey" 
+    FOREIGN KEY ("acc_r_id") REFERENCES "public"."roles"("r_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
-
+-- 2. accounts_m2m_items (CASCADE - логично)
+ALTER TABLE ONLY "public"."accounts_m2m_items"
+    ADD CONSTRAINT "accounts_m2m_items_ai_acc_id_fkey" 
+    FOREIGN KEY ("ai_acc_id") REFERENCES "public"."accounts"("acc_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY "public"."accounts_m2m_items"
-    ADD CONSTRAINT "accounts_m2m_items_ai_acc_id_fkey" FOREIGN KEY ("ai_acc_id") REFERENCES "public"."accounts"("acc_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "accounts_m2m_items_ai_it_id_fkey" 
+    FOREIGN KEY ("ai_it_id") REFERENCES "public"."items"("it_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
-
-
-ALTER TABLE ONLY "public"."accounts_m2m_items"
-    ADD CONSTRAINT "accounts_m2m_items_ai_it_id_fkey" FOREIGN KEY ("ai_it_id") REFERENCES "public"."items"("it_id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
-
+-- 3. characteristic_values → animals (SET NULL - сохраняем данные)
 ALTER TABLE ONLY "public"."characteristic_values"
-    ADD CONSTRAINT "characteristic_values_cv_an_id_fkey" FOREIGN KEY ("cv_an_id") REFERENCES "public"."animals"("an_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "characteristic_values_cv_an_id_fkey" 
+    FOREIGN KEY ("cv_an_id") REFERENCES "public"."animals"("an_id") 
+    ON DELETE SET NULL;
 
-
+-- 4. items (RESTRICT - защита товаров)
+ALTER TABLE ONLY "public"."items"
+    ADD CONSTRAINT "items_it_an_id_fkey" 
+    FOREIGN KEY ("it_an_id") REFERENCES "public"."animals"("an_id") 
+    ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."items"
-    ADD CONSTRAINT "items_it_an_id_fkey" FOREIGN KEY ("it_an_id") REFERENCES "public"."animals"("an_id") ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT "items_it_br_id_fkey" 
+    FOREIGN KEY ("it_br_id") REFERENCES "public"."brands"("br_id") 
+    ON DELETE RESTRICT;
 
-
-
-ALTER TABLE ONLY "public"."items"
-    ADD CONSTRAINT "items_it_br_id_fkey" FOREIGN KEY ("it_br_id") REFERENCES "public"."brands"("br_id") ON UPDATE CASCADE ON DELETE RESTRICT;
-
-
+-- 5. items_m2m_characteristic_values (CASCADE - логично)
+ALTER TABLE ONLY "public"."items_m2m_characteristic_values"
+    ADD CONSTRAINT "items_m2m_characteristic_values_icv_cv_id_fkey" 
+    FOREIGN KEY ("icv_cv_id") REFERENCES "public"."characteristic_values"("cv_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY "public"."items_m2m_characteristic_values"
-    ADD CONSTRAINT "items_m2m_characteristic_values_icv_cv_id_fkey" FOREIGN KEY ("icv_cv_id") REFERENCES "public"."characteristic_values"("cv_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "items_m2m_characteristic_values_icv_it_id_fkey" 
+    FOREIGN KEY ("icv_it_id") REFERENCES "public"."items"("it_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
-
-
-ALTER TABLE ONLY "public"."items_m2m_characteristic_values"
-    ADD CONSTRAINT "items_m2m_characteristic_values_icv_it_id_fkey" FOREIGN KEY ("icv_it_id") REFERENCES "public"."items"("it_id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
+-- 6. orders_m2m_items
+ALTER TABLE ONLY "public"."orders_m2m_items"
+    ADD CONSTRAINT "orders_m2m_items_oi_it_id_fkey" 
+    FOREIGN KEY ("oi_it_id") REFERENCES "public"."items"("it_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;  -- Не удалять товар в заказе
 
 ALTER TABLE ONLY "public"."orders_m2m_items"
-    ADD CONSTRAINT "orders_m2m_items_oi_it_id_fkey" FOREIGN KEY ("oi_it_id") REFERENCES "public"."items"("it_id") ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT "orders_m2m_items_oi_ord_id_fkey" 
+    FOREIGN KEY ("oi_ord_id") REFERENCES "public"."orders"("ord_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;  -- Удаление заказа удаляет позиции
 
-
-
-ALTER TABLE ONLY "public"."orders_m2m_items"
-    ADD CONSTRAINT "orders_m2m_items_oi_ord_id_fkey" FOREIGN KEY ("oi_ord_id") REFERENCES "public"."orders"("ord_id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
+-- 7. orders_m2m_statuses
+ALTER TABLE ONLY "public"."orders_m2m_statuses"
+    ADD CONSTRAINT "orders_m2m_statuses_os_ord_id_fkey" 
+    FOREIGN KEY ("os_ord_id") REFERENCES "public"."orders"("ord_id") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY "public"."orders_m2m_statuses"
-    ADD CONSTRAINT "orders_m2m_statuses_os_ord_id_fkey" FOREIGN KEY ("os_ord_id") REFERENCES "public"."orders"("ord_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "orders_m2m_statuses_os_stat_id_fkey" 
+    FOREIGN KEY ("os_stat_id") REFERENCES "public"."statuses"("stat_id") 
+    ON DELETE RESTRICT;  -- Не удалять используемые статусы
 
-
-
-ALTER TABLE ONLY "public"."orders_m2m_statuses"
-    ADD CONSTRAINT "orders_m2m_statuses_os_stat_id_fkey" FOREIGN KEY ("os_stat_id") REFERENCES "public"."statuses"("stat_id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
+-- 8. orders (SET NULL - сохраняем историю заказов)
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_ord_acc_id_fkey" 
+    FOREIGN KEY ("ord_acc_id") REFERENCES "public"."accounts"("acc_id") 
+    ON DELETE SET NULL;  -- При удалении пользователя заказы остаются
 
 ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_ord_acc_id_fkey" FOREIGN KEY ("ord_acc_id") REFERENCES "public"."accounts"("acc_id") ON UPDATE CASCADE ON DELETE RESTRICT;
-
-
-
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_ord_pm_id_fkey" FOREIGN KEY ("ord_pm_id") REFERENCES "public"."payment_methods"("pm_id") ON UPDATE CASCADE ON DELETE RESTRICT;
-
-
+    ADD CONSTRAINT "orders_ord_pm_id_fkey" 
+    FOREIGN KEY ("ord_pm_id") REFERENCES "public"."payment_methods"("pm_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_ord_sh_id_fkey" FOREIGN KEY ("ord_sh_id") REFERENCES "public"."shops"("sh_id") ON UPDATE CASCADE ON DELETE RESTRICT;
-
-
+    ADD CONSTRAINT "orders_ord_sh_id_fkey" 
+    FOREIGN KEY ("ord_sh_id") REFERENCES "public"."shops"("sh_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
 ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_ord_st_id_fkey" FOREIGN KEY ("ord_st_id") REFERENCES "public"."storages"("st_d") ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT "orders_ord_st_id_fkey" 
+    FOREIGN KEY ("ord_st_id") REFERENCES "public"."storages"("st_d") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
-
+-- 9. promotions (SET NULL - сохраняем акции)
+ALTER TABLE ONLY "public"."promotions"
+    ADD CONSTRAINT "promotions_pr_an_id_fkey" 
+    FOREIGN KEY ("pr_an_id") REFERENCES "public"."animals"("an_id") 
+    ON DELETE SET NULL;
 
 ALTER TABLE ONLY "public"."promotions"
-    ADD CONSTRAINT "promotions_pr_br_id_fkey" FOREIGN KEY ("pr_br_id") REFERENCES "public"."brands"("br_id") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
+    ADD CONSTRAINT "promotions_pr_br_id_fkey" 
+    FOREIGN KEY ("pr_br_id") REFERENCES "public"."brands"("br_id") 
+    ON DELETE SET NULL;
 
 ALTER TABLE ONLY "public"."promotions"
-    ADD CONSTRAINT "promotions_pr_cv_id_fkey" FOREIGN KEY ("pr_cv_id") REFERENCES "public"."characteristic_values"("cv_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "promotions_pr_cv_id_fkey" 
+    FOREIGN KEY ("pr_cv_id") REFERENCES "public"."characteristic_values"("cv_id") 
+    ON DELETE SET NULL;
 
-
-
+-- 10. shops → cities
 ALTER TABLE ONLY "public"."shops"
-    ADD CONSTRAINT "shops_sh_c_id_fkey" FOREIGN KEY ("sh_c_id") REFERENCES "public"."cities"("c_id") ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT "shops_sh_c_id_fkey" 
+    FOREIGN KEY ("sh_c_id") REFERENCES "public"."cities"("c_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
-
+-- 11. storages_m2m_items
+ALTER TABLE ONLY "public"."storages_m2m_items"
+    ADD CONSTRAINT "storages_m2m_items_si_it_id_fkey" 
+    FOREIGN KEY ("si_it_id") REFERENCES "public"."items"("it_id") 
+    ON DELETE RESTRICT;  -- Нельзя удалить товар с остатками
 
 ALTER TABLE ONLY "public"."storages_m2m_items"
-    ADD CONSTRAINT "storages_m2m_items_si_it_id_fkey" FOREIGN KEY ("si_it_id") REFERENCES "public"."items"("it_id") ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "storages_m2m_items_si_st_id_fkey" 
+    FOREIGN KEY ("si_st_id") REFERENCES "public"."storages"("st_d") 
+    ON UPDATE CASCADE ON DELETE CASCADE;
 
-
-
-ALTER TABLE ONLY "public"."storages_m2m_items"
-    ADD CONSTRAINT "storages_m2m_items_si_st_id_fkey" FOREIGN KEY ("si_st_id") REFERENCES "public"."storages"("st_d") ON UPDATE CASCADE ON DELETE CASCADE;
-
-
-
+-- 12. storages → cities
 ALTER TABLE ONLY "public"."storages"
-    ADD CONSTRAINT "storages_st_c_id_fkey" FOREIGN KEY ("st_c_id") REFERENCES "public"."cities"("c_id") ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT "storages_st_c_id_fkey" 
+    FOREIGN KEY ("st_c_id") REFERENCES "public"."cities"("c_id") 
+    ON UPDATE CASCADE ON DELETE RESTRICT;
 
+-- =====================================================
+-- ПОЛИТИКИ RLS
+-- =====================================================
 
+CREATE POLICY "Admins can do everything" ON "public"."accounts" 
+    TO "authenticated" USING ("public"."is_admin"());
 
-CREATE POLICY "Admins can do everything" ON "public"."accounts" TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "Users can change theor own" ON "public"."accounts" 
+    TO "authenticated" USING (("auth"."uid"() = "acc_id"));
 
+CREATE POLICY "Enable insert for authenticated users only" ON "public"."accounts_m2m_items" 
+    FOR INSERT TO "authenticated" WITH CHECK (true);
 
+CREATE POLICY "Выбор данных корзины" ON "public"."accounts_m2m_items" 
+    FOR SELECT USING (("auth"."uid"() = "ai_acc_id"));
 
-CREATE POLICY "Admins can do everything on order items" ON "public"."orders_m2m_items" TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "Пользователи могут изменять свои" ON "public"."accounts_m2m_items" 
+    FOR UPDATE USING (("auth"."uid"() = "ai_acc_id")) WITH CHECK (("auth"."uid"() = "ai_acc_id"));
 
+CREATE POLICY "Пользователи могут удалять свои т" ON "public"."accounts_m2m_items" 
+    FOR DELETE USING (("auth"."uid"() = "ai_acc_id"));
 
+CREATE POLICY "Delete for admin" ON "public"."animals" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "All for admin" ON "public"."storages_m2m_items" USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Enable read access for all users" ON "public"."animals" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Insert for admin" ON "public"."animals" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."animals" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Allow select for all users" ON "public"."characteristic_values" FOR SELECT USING (true);
+CREATE POLICY "Delete for admin" ON "public"."brands" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Enable read access for all users" ON "public"."brands" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Insert for admin" ON "public"."brands" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Allow select for all users" ON "public"."cities" FOR SELECT USING (true);
+CREATE POLICY "Update for admin" ON "public"."brands" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Allow select for all users" ON "public"."characteristic_values" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Delete for admin" ON "public"."characteristic_values" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Allow select for all users" ON "public"."items_m2m_characteristic_values" FOR SELECT USING (true);
+CREATE POLICY "Insert for admin" ON "public"."characteristic_values" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."characteristic_values" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Allow select for all users" ON "public"."cities" 
+    FOR SELECT USING (true);
 
-CREATE POLICY "Allow select for authenticated users" ON "public"."payment_methods" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
+CREATE POLICY "Delete for admin" ON "public"."cities" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Insert for admin" ON "public"."cities" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."cities" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Allow select for authenticated users" ON "public"."shops" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
+CREATE POLICY "Delete for admin" ON "public"."items" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Enable read access for all users" ON "public"."items" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Insert for admin" ON "public"."items" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."animals" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Update for admin" ON "public"."items" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Allow select for all users" ON "public"."items_m2m_characteristic_values" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Delete for admin" ON "public"."items_m2m_characteristic_values" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."brands" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Insert for admin" ON "public"."items_m2m_characteristic_values" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."items_m2m_characteristic_values" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Delete orders for admin" ON "public"."orders" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."characteristic_values" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Insert any orders for admin" ON "public"."orders" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Insert own orders for users" ON "public"."orders" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()))));
 
+CREATE POLICY "Select all orders for admin" ON "public"."orders" 
+    FOR SELECT USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."cities" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Select own orders for users" ON "public"."orders" 
+    FOR SELECT USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()))));
 
+CREATE POLICY "Update orders for admin" ON "public"."orders" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Admins can do everything on order items" ON "public"."orders_m2m_items" 
+    TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
-CREATE POLICY "Delete for admin" ON "public"."items" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Users can create their own order items" ON "public"."orders_m2m_items" 
+    FOR INSERT TO "authenticated" WITH CHECK ((EXISTS (SELECT 1 FROM orders o WHERE (o.ord_id = orders_m2m_items.oi_ord_id) AND (o.ord_acc_id = auth.uid()))));
 
+CREATE POLICY "Users can view their own order items" ON "public"."orders_m2m_items" 
+    FOR SELECT TO "authenticated" USING ((EXISTS (SELECT 1 FROM orders o WHERE (o.ord_id = orders_m2m_items.oi_ord_id) AND (o.ord_acc_id = auth.uid()))));
 
+CREATE POLICY "Users cannot delete order items" ON "public"."orders_m2m_items" 
+    FOR DELETE TO "authenticated" USING (false);
 
-CREATE POLICY "Delete for admin" ON "public"."items_m2m_characteristic_values" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Users cannot update order items" ON "public"."orders_m2m_items" 
+    FOR UPDATE TO "authenticated" USING (false);
 
+CREATE POLICY "Delete orders for admin" ON "public"."orders_m2m_statuses" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Insert own orders for users" ON "public"."orders_m2m_statuses" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()))));
 
-CREATE POLICY "Delete for admin" ON "public"."payment_methods" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Select own orders for users" ON "public"."orders_m2m_statuses" 
+    FOR SELECT USING ((auth.role() = 'authenticated'::text));
 
+CREATE POLICY "Update orders for admin" ON "public"."orders_m2m_statuses" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Allow select for authenticated users" ON "public"."payment_methods" 
+    FOR SELECT USING ((auth.role() = 'authenticated'::text));
 
-CREATE POLICY "Delete for admin" ON "public"."promotions" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Delete for admin" ON "public"."payment_methods" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Insert for admin" ON "public"."payment_methods" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."payment_methods" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."shops" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Delete for admin" ON "public"."promotions" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Enable read access for all users" ON "public"."promotions" 
+    FOR SELECT USING (true);
 
+CREATE POLICY "Insert for admin" ON "public"."promotions" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete for admin" ON "public"."storages" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Update for admin" ON "public"."promotions" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Allow select for authenticated users" ON "public"."shops" 
+    FOR SELECT USING ((auth.role() = 'authenticated'::text));
 
+CREATE POLICY "Delete for admin" ON "public"."shops" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete orders for admin" ON "public"."orders" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Insert for admin" ON "public"."shops" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Update for admin" ON "public"."shops" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Delete orders for admin" ON "public"."statuses" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete orders for admin" ON "public"."orders_m2m_statuses" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Insert any orders for admin" ON "public"."statuses" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Select own orders for users" ON "public"."statuses" 
+    FOR SELECT USING ((auth.role() = 'authenticated'::text));
 
+CREATE POLICY "Update orders for admin" ON "public"."statuses" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-CREATE POLICY "Delete orders for admin" ON "public"."statuses" FOR DELETE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
+CREATE POLICY "Delete for admin" ON "public"."storages" 
+    FOR DELETE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Insert for admin" ON "public"."storages" 
+    FOR INSERT WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "Select for authorised" ON "public"."storages" 
+    FOR SELECT USING ((auth.role() = 'authenticated'::text));
 
-CREATE POLICY "Enable insert for authenticated users only" ON "public"."accounts_m2m_items" FOR INSERT TO "authenticated" WITH CHECK (true);
+CREATE POLICY "Update for admin" ON "public"."storages" 
+    FOR UPDATE USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
+CREATE POLICY "All for admin" ON "public"."storages_m2m_items" 
+    USING ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1)))) 
+    WITH CHECK ((EXISTS (SELECT 1 FROM public.accounts WHERE (accounts.acc_id = auth.uid()) AND (accounts.acc_r_id = 1))));
 
-
-CREATE POLICY "Enable read access for all users" ON "public"."animals" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Enable read access for all users" ON "public"."brands" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Enable read access for all users" ON "public"."items" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Enable read access for all users" ON "public"."promotions" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Insert any orders for admin" ON "public"."orders" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert any orders for admin" ON "public"."statuses" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."animals" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."brands" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."characteristic_values" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."cities" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."items" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."items_m2m_characteristic_values" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."payment_methods" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."promotions" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."shops" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert for admin" ON "public"."storages" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Insert own orders for users" ON "public"."orders" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE ("accounts"."acc_id" = "auth"."uid"()))));
-
-
-
-CREATE POLICY "Insert own orders for users" ON "public"."orders_m2m_statuses" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE ("accounts"."acc_id" = "auth"."uid"()))));
-
-
-
-CREATE POLICY "Select all orders for admin" ON "public"."orders" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Select for authorised" ON "public"."storages" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
-
-
-
-CREATE POLICY "Select own orders for users" ON "public"."orders" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE ("accounts"."acc_id" = "auth"."uid"()))));
-
-
-
-CREATE POLICY "Select own orders for users" ON "public"."orders_m2m_statuses" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
-
-
-
-CREATE POLICY "Select own orders for users" ON "public"."statuses" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."animals" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."brands" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."characteristic_values" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."cities" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."items" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."items_m2m_characteristic_values" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."payment_methods" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."promotions" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."shops" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update for admin" ON "public"."storages" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update orders for admin" ON "public"."orders" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update orders for admin" ON "public"."orders_m2m_statuses" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Update orders for admin" ON "public"."statuses" FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM "public"."accounts"
-  WHERE (("accounts"."acc_id" = "auth"."uid"()) AND ("accounts"."acc_r_id" = 1)))));
-
-
-
-CREATE POLICY "Users can change theor own" ON "public"."accounts" TO "authenticated" USING (("auth"."uid"() = "acc_id"));
-
-
-
-CREATE POLICY "Users can create their own order items" ON "public"."orders_m2m_items" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."orders" "o"
-  WHERE (("o"."ord_id" = "orders_m2m_items"."oi_ord_id") AND ("o"."ord_acc_id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "Users can view their own order items" ON "public"."orders_m2m_items" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."orders" "o"
-  WHERE (("o"."ord_id" = "orders_m2m_items"."oi_ord_id") AND ("o"."ord_acc_id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "Users cannot delete order items" ON "public"."orders_m2m_items" FOR DELETE TO "authenticated" USING (false);
-
-
-
-CREATE POLICY "Users cannot update order items" ON "public"."orders_m2m_items" FOR UPDATE TO "authenticated" USING (false);
-
-
+-- =====================================================
+-- ВКЛЮЧЕНИЕ RLS
+-- =====================================================
 
 ALTER TABLE "public"."accounts" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."accounts_m2m_items" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."animals" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."brands" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."characteristic_values" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."cities" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."items" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."items_m2m_characteristic_values" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."orders_m2m_items" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."orders_m2m_statuses" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."payment_methods" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."promotions" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."roles" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."shops" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."statuses" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."storages" ENABLE ROW LEVEL SECURITY;
-
-
 ALTER TABLE "public"."storages_m2m_items" ENABLE ROW LEVEL SECURITY;
 
-
-CREATE POLICY "Выбор данных корзины" ON "public"."accounts_m2m_items" FOR SELECT USING (("auth"."uid"() = "ai_acc_id"));
-
-
-
-CREATE POLICY "Пользователи могут изменять свои " ON "public"."accounts_m2m_items" FOR UPDATE USING (("auth"."uid"() = "ai_acc_id")) WITH CHECK (("auth"."uid"() = "ai_acc_id"));
-
-
-
-CREATE POLICY "Пользователи могут удалять свои т" ON "public"."accounts_m2m_items" FOR DELETE USING (("auth"."uid"() = "ai_acc_id"));
-
-
-
-
+-- =====================================================
+-- ПУБЛИКАЦИЯ ДЛЯ REALTIME
+-- =====================================================
 
 ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
-
-
-
-
-
-
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."items";
 
-
+-- =====================================================
+-- ПРИВИЛЕГИИ
+-- =====================================================
 
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
 GRANT USAGE ON SCHEMA "public" TO "service_role";
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+GRANT ALL ON PROCEDURE "public"."accrue_bonuses_after_success"(IN "p_order_id" bigint) TO "anon";
+GRANT ALL ON PROCEDURE "public"."accrue_bonuses_after_success"(IN "p_order_id" bigint) TO "authenticated";
+GRANT ALL ON PROCEDURE "public"."accrue_bonuses_after_success"(IN "p_order_id" bigint) TO "service_role";
+
+GRANT ALL ON PROCEDURE "public"."cancel_order"(IN "p_order_id" bigint) TO "anon";
+GRANT ALL ON PROCEDURE "public"."cancel_order"(IN "p_order_id" bigint) TO "authenticated";
+GRANT ALL ON PROCEDURE "public"."cancel_order"(IN "p_order_id" bigint) TO "service_role";
+
+GRANT ALL ON PROCEDURE "public"."reduce_storage_after_checkout"(IN "p_order_id" bigint) TO "anon";
+GRANT ALL ON PROCEDURE "public"."reduce_storage_after_checkout"(IN "p_order_id" bigint) TO "authenticated";
+GRANT ALL ON PROCEDURE "public"."reduce_storage_after_checkout"(IN "p_order_id" bigint) TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."check_discount_percentage"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_discount_percentage"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_discount_percentage"() TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."check_item_price"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_item_price"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_item_price"() TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."copy_user_to_accounts"() TO "anon";
 GRANT ALL ON FUNCTION "public"."copy_user_to_accounts"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."copy_user_to_accounts"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "anon";
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_admin"() TO "service_role";
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+GRANT ALL ON FUNCTION "public"."on_auth_user_created"() TO "anon";
+GRANT ALL ON FUNCTION "public"."on_auth_user_created"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."on_auth_user_created"() TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."validate_promotion_dates"() TO "anon";
+GRANT ALL ON FUNCTION "public"."validate_promotion_dates"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."validate_promotion_dates"() TO "service_role";
 
 GRANT ALL ON TABLE "public"."accounts" TO "anon";
 GRANT ALL ON TABLE "public"."accounts" TO "authenticated";
 GRANT ALL ON TABLE "public"."accounts" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."accounts_m2m_items" TO "anon";
 GRANT ALL ON TABLE "public"."accounts_m2m_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."accounts_m2m_items" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."animals" TO "anon";
 GRANT ALL ON TABLE "public"."animals" TO "authenticated";
 GRANT ALL ON TABLE "public"."animals" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."brands" TO "anon";
 GRANT ALL ON TABLE "public"."brands" TO "authenticated";
 GRANT ALL ON TABLE "public"."brands" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."characteristic_values" TO "anon";
 GRANT ALL ON TABLE "public"."characteristic_values" TO "authenticated";
 GRANT ALL ON TABLE "public"."characteristic_values" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."cities" TO "anon";
 GRANT ALL ON TABLE "public"."cities" TO "authenticated";
 GRANT ALL ON TABLE "public"."cities" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."items" TO "anon";
 GRANT ALL ON TABLE "public"."items" TO "authenticated";
 GRANT ALL ON TABLE "public"."items" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."items_m2m_characteristic_values" TO "anon";
 GRANT ALL ON TABLE "public"."items_m2m_characteristic_values" TO "authenticated";
 GRANT ALL ON TABLE "public"."items_m2m_characteristic_values" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."orders" TO "anon";
 GRANT ALL ON TABLE "public"."orders" TO "authenticated";
 GRANT ALL ON TABLE "public"."orders" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."orders_m2m_items" TO "anon";
 GRANT ALL ON TABLE "public"."orders_m2m_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."orders_m2m_items" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."orders_m2m_statuses" TO "anon";
 GRANT ALL ON TABLE "public"."orders_m2m_statuses" TO "authenticated";
 GRANT ALL ON TABLE "public"."orders_m2m_statuses" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."payment_methods" TO "anon";
 GRANT ALL ON TABLE "public"."payment_methods" TO "authenticated";
 GRANT ALL ON TABLE "public"."payment_methods" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."promotions" TO "anon";
 GRANT ALL ON TABLE "public"."promotions" TO "authenticated";
 GRANT ALL ON TABLE "public"."promotions" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."roles" TO "anon";
 GRANT ALL ON TABLE "public"."roles" TO "authenticated";
 GRANT ALL ON TABLE "public"."roles" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."shops" TO "anon";
 GRANT ALL ON TABLE "public"."shops" TO "authenticated";
 GRANT ALL ON TABLE "public"."shops" TO "service_role";
 
-
-
-GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."statuses" TO "anon";
 GRANT ALL ON TABLE "public"."statuses" TO "authenticated";
 GRANT ALL ON TABLE "public"."statuses" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."storages" TO "anon";
 GRANT ALL ON TABLE "public"."storages" TO "authenticated";
 GRANT ALL ON TABLE "public"."storages" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."storages_m2m_items" TO "anon";
 GRANT ALL ON TABLE "public"."storages_m2m_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."storages_m2m_items" TO "service_role";
 
+GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."animals_an_id_seq" TO "service_role";
 
+GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."brands_br_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."characteristic_values_cv_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."cities_c_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."items_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."orders_m2m_items_oi_it_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."orders_m2m_statuses_os_ord_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."orders_ord_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."payment_methods_pm_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."promotions_pr_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."roles_r_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."shops_sh_id_seq" TO "service_role";
+
+GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."statuses_st_id_seq" TO "service_role";
 
 GRANT ALL ON SEQUENCE "public"."storages_st_d_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."storages_st_d_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."storages_st_d_seq" TO "service_role";
-
-
-
-
-
-
-
-
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
 
-
-
-
-
-
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
 
-
-
-
-
-
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

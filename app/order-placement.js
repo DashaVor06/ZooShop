@@ -145,7 +145,7 @@ export default function OrderPlacementScreen() {
     );
 
     if (error) {
-      Alert.alert(tLang("common.error"), tLang("order.error"));
+      Alert.alert(tLang("common.error"), error.message || tLang("order.error"));
     } else {
       Alert.alert(tLang("common.success"), tLang("order.success"), [
         { text: "OK", onPress: () => {

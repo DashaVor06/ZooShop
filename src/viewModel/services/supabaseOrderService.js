@@ -217,6 +217,17 @@ export const supabaseOrderService = () => {
         throw itemsError;
       }
 
+      // ВЫЗОВ ПРОЦЕДУРЫ: Уменьшаем остатки на складе
+      const { error: stockError } = await supabase.rpc('reduce_storage_after_checkout', { 
+        p_order_id: order.ord_id 
+      });
+
+      if (stockError) {
+        console.error("Stock reduction error:", stockError);
+        // Если ошибка от триггера tr_check_inventory
+        throw new Error(stockError.message || "Ошибка списания остатков");
+      }
+
       // 5. Deduct bonuses from user account if any used
       if (bonusesUsed > 0) {
         const { data: account, error: accFetchError } = await supabase
@@ -490,11 +501,53 @@ export const supabaseOrderService = () => {
     }
   };
 
+  const cancelOrder = async (orderId) => {
+    try {
+      const { error } = await supabase.rpc('cancel_order', { 
+        p_order_id: orderId 
+      });
+
+      if (error) {
+        alert(error.message);
+        throw error;
+      }
+      
+      return { success: true };
+    } catch (e) {
+      console.error("Cancel order error:", e.message);
+      throw e;
+    }
+  };
+
+  const completeOrder = async (orderId) => {
+    try {
+      const { error: statusError } = await supabase
+        .from('orders')
+        .update({ ord_st_id: 5 })
+        .eq('ord_id', orderId);
+
+      if (statusError) throw statusError;
+
+      const { error: bonusError } = await supabase.rpc('accrue_bonuses_after_success', { 
+        p_order_id: orderId 
+      });
+
+      if (bonusError) throw bonusError;
+
+      return { success: true };
+    } catch (e) {
+      console.error("Complete order error:", e.message);
+      alert(e.message);
+      throw e;
+    }
+  };
+
   return { 
     fetchShops, createShop, updateShop, deleteShop,
     fetchPaymentMethods, createOrder, fetchCities, createCity,
     fetchAllOrders, fetchStatuses, updateOrderStatus, 
     fetchUserOrders, fetchStorages, updateOrderStorage, 
-    createStorage, updateStorage, deleteStorage 
+    createStorage, updateStorage, deleteStorage,
+    cancelOrder, completeOrder
   };
 };
