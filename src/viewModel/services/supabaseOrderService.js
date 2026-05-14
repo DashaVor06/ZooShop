@@ -54,7 +54,14 @@ export const supabaseOrderService = () => {
 
   const deleteShop = async (id) => {
     const { error } = await supabase.from("shops").delete().eq("sh_id", id);
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23503') {
+        alert("Невозможно удалить магазин: на него ссылаются другие данные (например, заказы).");
+      } else {
+        alert(`Ошибка удаления: ${error.message}`);
+      }
+      throw error;
+    }
     return { success: true };
   };
 
@@ -124,7 +131,14 @@ export const supabaseOrderService = () => {
 
   const deleteStorage = async (id) => {
     const { error } = await supabase.from("storages").delete().eq("st_d", id);
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23503') {
+        alert("Невозможно удалить склад: на нем числятся товары или он привязан к заказам.");
+      } else {
+        alert(`Ошибка удаления: ${error.message}`);
+      }
+      throw error;
+    }
     return { success: true };
   };
 
@@ -149,43 +163,49 @@ export const supabaseOrderService = () => {
 
       const { data: stockData, error: stockErr } = await supabase
         .from("storages_m2m_items")
-        .select("si_it_id, si_st_id");
+        .select("si_it_id, si_st_id, si_amount");
       
       if (stockErr) {
-        console.warn("Could not fetch stock data, falling back to distance-only selection:", stockErr);
+        console.warn("Could not fetch stock data:", stockErr);
       }
 
-      let nearestStorageId = null;
+      // 1. Фильтруем склады, на которых физически есть ВСЕ нужные товары в нужном количестве
+      const validStorages = storages.filter(storage => {
+        const storageItems = stockData 
+          ? stockData.filter(s => String(s.si_st_id) === String(storage.st_d))
+          : [];
+        
+        return items.every(neededItem => {
+          const stock = storageItems.find(s => String(s.si_it_id) === String(neededItem.it_id));
+          return stock && Number(stock.si_amount) >= Number(neededItem.amount);
+        });
+      });
+
+      if (validStorages.length === 0) {
+        throw new Error("Нет склада с достаточным количеством всех товаров для выполнения заказа.");
+      }
+
+      // 2. Из доступных складов выбираем ближайший (если есть координаты) или просто первый
+      let selectedStorageId = validStorages[0].st_d;
       let minDistance = Infinity;
 
       if (shopCoords.lat && shopCoords.lng) {
-        storages.forEach(storage => {
+        validStorages.forEach(storage => {
           const storCoords = parsePoint(storage.st_location);
-          
-          // Check if this storage has all items
-          const storageItems = stockData 
-            ? stockData.filter(s => s.si_st_id === storage.st_d).map(s => s.si_it_id)
-            : [];
-          
-          const hasAllItems = stockData 
-            ? items.every(item => storageItems.includes(item.it_id))
-            : true;
-
-          if (hasAllItems && storCoords.lat && storCoords.lng) {
+          if (storCoords.lat && storCoords.lng) {
             const dist = calculateDistance(shopCoords.lat, shopCoords.lng, storCoords.lat, storCoords.lng);
             if (dist < minDistance) {
               minDistance = dist;
-              nearestStorageId = storage.st_d;
+              selectedStorageId = storage.st_d;
             }
           }
         });
       }
 
-      // If no storage found with all items, try distance-only as fallback or keep existing
-      const finalStorageId = nearestStorageId || (storages[0]?.st_d);
+      const finalStorageId = selectedStorageId;
 
-      // 2. Calculate bonuses to be earned (5 kopeks per 1 ruble = 5 bonuses)
-      const bonusesToEarn = Math.floor((orderData.ord_final_sum || 0) * 5);
+      // 2. Calculate bonuses to be earned (5% of final sum)
+      const bonusesToEarn = Math.floor((orderData.ord_final_sum || 0) * 0.05 * 100); // 5% in bonus units
 
       // 3. Insert into orders
       const { data: order, error: orderError } = await supabase
@@ -194,7 +214,8 @@ export const supabaseOrderService = () => {
           ...orderData, 
           ord_st_id: finalStorageId,
           ord_bonuses_used: bonusesUsed, 
-          ord_bonuses_earned: bonusesToEarn 
+          ord_bonuses_earned: bonusesToEarn,
+          ord_items_sum: orderData.ord_final_sum + (bonusesUsed / 100)
         }])
         .select()
         .single();
@@ -217,15 +238,15 @@ export const supabaseOrderService = () => {
         throw itemsError;
       }
 
-      // ВЫЗОВ ПРОЦЕДУРЫ: Уменьшаем остатки на складе
+      // ВЫЗОВ ФУНКЦИИ (RPC): Уменьшаем остатки на складе автоматически в БД
       const { error: stockError } = await supabase.rpc('reduce_storage_after_checkout', { 
         p_order_id: order.ord_id 
       });
 
       if (stockError) {
         console.error("Stock reduction error:", stockError);
-        // Если ошибка от триггера tr_check_inventory
-        throw new Error(stockError.message || "Ошибка списания остатков");
+        alert(`Ошибка списания остатков: ${stockError.message}`);
+        throw stockError;
       }
 
       // 5. Deduct bonuses from user account if any used
@@ -245,7 +266,7 @@ export const supabaseOrderService = () => {
         }
       }
 
-      // 3. Insert initial status (ID 1) into orders_m2m_statuses
+      // 6. Insert initial status (ID 1) into orders_m2m_statuses
       const { error: statusError } = await supabase
         .from("orders_m2m_statuses")
         .insert([{
@@ -258,7 +279,7 @@ export const supabaseOrderService = () => {
         console.error("Error setting initial order status:", statusError);
       }
 
-      // 4. Clearing the basket for the items that were ordered
+      // 7. Clearing the basket for the items that were ordered
       const { error: clearError } = await supabase
         .from("accounts_m2m_items")
         .delete()
@@ -270,6 +291,7 @@ export const supabaseOrderService = () => {
       return { data: order, error: null };
     } catch (error) {
       console.error("Error creating order:", error);
+      alert(`Ошибка при формировании заказа: ${error.message}`);
       return { data: null, error };
     }
   };
@@ -365,7 +387,6 @@ export const supabaseOrderService = () => {
 
   const updateOrderStatus = async (orderId, statusId) => {
     try {
-      // Fetch all existing statuses to find the real maximum ID
       const { data: allStatuses, error: statError } = await supabase
         .from("statuses")
         .select("stat_id");
@@ -374,88 +395,33 @@ export const supabaseOrderService = () => {
       
       const maxStatusId = Math.max(...allStatuses.map(s => s.stat_id));
 
-      // We check if at least one status exists
-      const { data: existing, error: fetchError } = await supabase
+      const { error: insertError } = await supabase
         .from("orders_m2m_statuses")
-        .select("*")
-        .eq("os_ord_id", orderId);
+        .insert([{
+          os_ord_id: orderId,
+          os_stat_id: statusId,
+          os_date: new Date().toISOString()
+        }]);
+      
+      if (insertError) throw insertError;
 
-      if (fetchError) throw fetchError;
+      // Update current status in orders table too
+      await supabase.from("orders").update({ ord_st_id: statusId }).eq("ord_id", orderId);
 
-      if (existing && existing.length > 0) {
-        // Update the most recent status (or all of them to be safe if it's a simple link)
-        // If it's history, we might want to insert instead, but the current logic is update.
-        // To be safe and fulfill "changing status", we update all records for this order.
-        const { error: updateError } = await supabase
-          .from("orders_m2m_statuses")
-          .update({
-            os_stat_id: statusId,
-            os_date: new Date().toISOString()
-          })
-          .eq("os_ord_id", orderId);
-        if (updateError) throw updateError;
-      } else {
-        // Insert new status if none exists
-        const { error: insertError } = await supabase
-          .from("orders_m2m_statuses")
-          .insert([{
-            os_ord_id: orderId,
-            os_stat_id: statusId,
-            os_date: new Date().toISOString()
-          }]);
-        if (insertError) throw insertError;
-      }
-
-      // If status is maximal, add bonuses
-      console.log(`Checking status: ${statusId} against maxStatus: ${maxStatusId}`);
       if (Number(statusId) === Number(maxStatusId)) {
-        // Check if bonuses were already added (if final status already exists in history)
-        const alreadyAccrued = existing.some(s => Number(s.os_stat_id) === Number(maxStatusId));
-        console.log(`Is already accrued? ${alreadyAccrued}`);
-        
-        if (!alreadyAccrued) {
-          const { data: order, error: orderFetchError } = await supabase
-            .from("orders")
-            .select("ord_acc_id, ord_bonuses_earned")
-            .eq("ord_id", orderId)
-            .single();
-          
-          if (!orderFetchError && order) {
-            console.log(`Order found for orderId ${orderId}. User acc_id: ${order.ord_acc_id}. Earned bonuses: ${order.ord_bonuses_earned}`);
-            
-            if (order.ord_bonuses_earned > 0) {
-              // Fetch account without .single() to avoid PGRST116 error if not found
-              const { data: accounts, error: accFetchError } = await supabase
-                .from("accounts")
-                .select("acc_bonus_balance")
-                .eq("acc_id", order.ord_acc_id);
-              
-              if (!accFetchError && accounts && accounts.length > 0) {
-                const account = accounts[0];
-                const { error: updateAccError } = await supabase
-                  .from("accounts")
-                  .update({ acc_bonus_balance: (account.acc_bonus_balance || 0) + order.ord_bonuses_earned })
-                  .eq("acc_id", order.ord_acc_id);
-                
-                if (!updateAccError) {
-                  console.log(`SUCCESS: Accrued ${order.ord_bonuses_earned} bonuses to user ${order.ord_acc_id}`);
-                } else {
-                  console.error("Failed to update account balance:", updateAccError);
-                }
-              } else {
-                console.error(`Account not found or inaccessible for acc_id: ${order.ord_acc_id}. Error:`, accFetchError);
-                console.warn("Hint: Check RLS policies on 'accounts' table. Admin must be able to SELECT and UPDATE users' accounts.");
-              }
-            }
-          } else {
-            console.error("Failed to fetch order for bonus accrual:", orderFetchError);
-          }
+        const { error: bonusError } = await supabase.rpc('accrue_bonuses_after_success', { 
+          p_order_id: orderId 
+        });
+        if (bonusError) {
+          console.error("Bonus accrual error:", bonusError);
+          alert(`Ошибка начисления бонусов: ${bonusError.message}`);
         }
       }
 
       return { success: true };
     } catch (e) {
       console.error("updateOrderStatus Error:", e);
+      alert(`Ошибка обновления статуса: ${e.message}`);
       return { success: false, error: e };
     }
   };
@@ -503,12 +469,13 @@ export const supabaseOrderService = () => {
 
   const cancelOrder = async (orderId) => {
     try {
+      // Вызываем функцию RPC, которая теперь корректно реализована в БД
       const { error } = await supabase.rpc('cancel_order', { 
         p_order_id: orderId 
       });
 
       if (error) {
-        alert(error.message);
+        alert(`Ошибка отмены заказа: ${error.message}`);
         throw error;
       }
       
@@ -521,6 +488,7 @@ export const supabaseOrderService = () => {
 
   const completeOrder = async (orderId) => {
     try {
+      // 1. Устанавливаем финальный статус (например, 5 - Выполнен)
       const { error: statusError } = await supabase
         .from('orders')
         .update({ ord_st_id: 5 })
@@ -528,16 +496,27 @@ export const supabaseOrderService = () => {
 
       if (statusError) throw statusError;
 
+      // 2. Добавляем запись в историю статусов
+      await supabase.from('orders_m2m_statuses').insert([{
+        os_ord_id: orderId,
+        os_stat_id: 5,
+        os_date: new Date().toISOString()
+      }]);
+
+      // 3. Начисляем бонусы через RPC функцию
       const { error: bonusError } = await supabase.rpc('accrue_bonuses_after_success', { 
         p_order_id: orderId 
       });
 
-      if (bonusError) throw bonusError;
+      if (bonusError) {
+        alert(`Ошибка начисления бонусов: ${bonusError.message}`);
+        throw bonusError;
+      }
 
       return { success: true };
     } catch (e) {
       console.error("Complete order error:", e.message);
-      alert(e.message);
+      alert(`Ошибка завершения заказа: ${e.message}`);
       throw e;
     }
   };

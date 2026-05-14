@@ -92,7 +92,14 @@ export const supabaseAnimalService = (db) => {
 
       // Удаляем из Supabase
       const { error } = await supabase.from("animals").delete().eq("an_id", id);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23503') {
+          alert("Невозможно удалить категорию: в ней есть товары или она привязана к акциям.");
+        } else {
+          alert(`Ошибка удаления: ${error.message}`);
+        }
+        throw error;
+      }
 
       // Удаляем локально
       const { deleteAnimalById } = require("../../model/animalModel");

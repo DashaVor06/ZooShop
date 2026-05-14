@@ -79,7 +79,15 @@ export const supabaseService = (db) => {
         if (!item.it_id.toString().startsWith("local_")) {
           // Cleanup m2m storage before deleting item
           await supabase.from("storages_m2m_items").delete().eq("si_it_id", item.it_id);
-          await supabase.from("items").delete().eq("it_id", item.it_id);
+          const { error } = await supabase.from("items").delete().eq("it_id", item.it_id);
+          if (error) {
+            if (error.code === '23503') {
+              alert(`Невозможно удалить "${item.it_name}": товар присутствует в заказах.`);
+            } else {
+              alert(`Ошибка удаления "${item.it_name}": ${error.message}`);
+            }
+            continue; // Skip deleting from local DB if remote delete failed
+          }
           if (item.it_image_file_id) await deleteImageFromImageKit(item.it_image_file_id).catch(() => {});
         }
         await deleteItemById(db, item.it_id);

@@ -96,7 +96,14 @@ export const supabasePromotionService = (db) => {
     try {
       if (!isConnected) throw new Error("network.error_offline");
       const { error } = await supabase.from("promotions").delete().eq("pr_id", id);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23503') {
+          alert("Невозможно удалить акцию: на нее ссылаются другие данные.");
+        } else {
+          alert(`Ошибка удаления: ${error.message}`);
+        }
+        throw error;
+      }
       await deletePromotionById(db, id);
       setPromotions((prev) => prev.filter(p => p.pr_id !== id));
     } catch (e) {

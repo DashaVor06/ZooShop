@@ -87,7 +87,14 @@ export const supabaseBrandService = (db) => {
 
       // Удаляем из Supabase
       const { error } = await supabase.from("brands").delete().eq("br_id", id);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23503') {
+          alert("Невозможно удалить бренд: он используется в товарах или акциях.");
+        } else {
+          alert(`Ошибка удаления: ${error.message}`);
+        }
+        throw error;
+      }
 
       // Удаляем локально
       const { deleteBrandById } = require("../../model/brandModel");
