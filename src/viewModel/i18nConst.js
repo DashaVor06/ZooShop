@@ -11,6 +11,7 @@ const i18n = new I18n({
       success: 'Success',
       error: 'Error',
       exit: 'Exit',
+      all: 'All brands'
     },
     auth: {
       account: 'Account',
@@ -175,6 +176,7 @@ const i18n = new I18n({
       success: 'Успешно',
       error: 'Ошибка',
       exit: 'Выход',
+      all: 'Все бренды'
     },
     auth: {
       account: 'Аккаунт',
